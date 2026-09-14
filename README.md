@@ -140,7 +140,7 @@ prices stop the run. Requests also prohibit backend fallback and require zero
 maximum prompt/completion prices; returned model/provider identities are checked.
 
 The local ledger reserves all remaining USD allowance **durably before I/O**,
-counts the attempt before sending, and releases the reservation only on valid
+counts the attempt and marks its cost unknown before sending, and releases the reservation only on valid
 usage/cost accounting or an explicit HTTP 429 rejection. Missing/malformed
 accounting or uncertain transport/server failures retain the reservation and
 stop immediately without retries. Reported costs are accumulated; any nonzero
@@ -198,6 +198,9 @@ allowlisted free model/backend is available. Then submit the same example into
 a new store. No further inference, paid fallback, service, or Harbour-specific
 graph coupling was attempted. Harbour still needs to invoke this CLI/API and
 consume the outcome; its source is not part of this repository.
+Subsequent review added regression tests for interrupted accounting commits and
+filesystem synchronization; pending attempts cannot appear fully accounted.
+The final suite passes all 33 tests.
 
 ## Graph rules and human boundaries
 
@@ -240,8 +243,12 @@ live in `adapters/`; the CLI uses Node's built-in argument parser.
 This is deliberately a single-writer, small-graph prototype. All CLI commands
 take an exclusive store lock; after a crash, remove `writer.lock` **only after
 confirming the owning process has stopped**. Await all store operations before
-closing. MangoDB rewrites the snapshot with a temporary-file rename; there
-are no cross-process database transactions or power-loss durability guarantees.
+closing. MangoDB rewrites the snapshot with a temporary-file rename; TAG then
+fsyncs the snapshot and all ancestor directory entries before acknowledging a
+save, including pre-request reservations. Filesystems must support and honour
+file/directory fsync; synchronization errors abort, never permit inference.
+There are no cross-process database transactions, and hardware/filesystem
+failures still require operator inspection rather than automatic recovery.
 Back up the closed directory. External code/tool effects and graph commits
 are not atomic; verify actual effects before retrying after a crash.
 

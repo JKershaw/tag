@@ -94,6 +94,8 @@ export async function dispatchRun(task, { store, provider, wait = sleep, now = (
     pending.run.usage.generations++;
     // Reserve the entire remaining budget before I/O. An uncertain response never releases it.
     pending.run.usage.reservedCostUsd = limits.maxCostUsd - pending.run.usage.knownCostUsd;
+    pending.run.usage.accountingComplete = false;
+    pending.run.usage.costUsd = null;
     pending.run.attempts.push({
       generation: pending.run.usage.generations, nodeId: node.id,
       model: provider.model, provider: provider.name, status: 'pending',
@@ -121,9 +123,12 @@ export async function dispatchRun(task, { store, provider, wait = sleep, now = (
       usage.totalTokens += response.usage.totalTokens;
       usage.knownCostUsd += response.usage.costUsd;
       usage.costUsd = usage.knownCostUsd;
+      usage.accountingComplete = true;
       usage.reservedCostUsd = 0;
     } else if (response.unbilled === true) {
       usage.reservedCostUsd = 0;
+      usage.accountingComplete = true;
+      usage.costUsd = usage.knownCostUsd;
     } else {
       usage.accountingComplete = false;
       usage.costUsd = null;

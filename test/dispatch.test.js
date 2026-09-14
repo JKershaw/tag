@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, open } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
@@ -45,6 +45,8 @@ function harness(handler = context => response(completion(context)), limits = {}
     assert.equal(graph.run.usage.generations, calls);
     assert.equal(graph.run.attempts.at(-1).status, 'pending');
     assert.equal(graph.run.usage.reservedCostUsd, graph.run.limits.maxCostUsd);
+    assert.equal(graph.run.usage.accountingComplete, false);
+    assert.equal(graph.run.usage.costUsd, null);
     return handler(JSON.parse(request.messages[1].content), calls);
   } });
   const options = { store, provider: agent, now: () => clock, wait: async ms => { waits.push(ms); clock += ms; } };
@@ -248,6 +250,66 @@ test('pending reservation is durable before I/O and failed persistence cannot st
   await assert.rejects(h.run(), /disk failure/);
   assert.equal(h.calls(), 0);
   await assert.rejects(h.run(), /empty store/);
+});
+
+test('failed accounting commit leaves pending cost unknown, never a complete zero-cost claim', async () => {
+  const h = harness();
+  const original = h.store.save;
+  h.store.save = async (...args) => {
+    if (args[0].run.attempts.at(-1)?.status === 'applied') throw new Error('accounting save failed');
+    return original(...args);
+  };
+  await assert.rejects(h.run(), /accounting save failed/);
+  assert.equal(h.calls(), 1);
+  assert.equal(h.graph().run.usage.accountingComplete, false);
+  assert.equal(h.graph().run.usage.costUsd, null);
+  assert.equal(h.graph().run.usage.reservedCostUsd, 0.10);
+  assert.equal(h.graph().run.attempts.at(-1).status, 'pending');
+  await assert.rejects(h.run(), /empty store/);
+});
+
+test('MangoDB flushes snapshot and ancestor directories; sync failures stop before inference', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'tag-sync-'));
+  let store;
+  try {
+    const probe = await open(join(directory, 'probe'), 'w');
+    const prototype = Object.getPrototypeOf(probe);
+    const original = prototype.sync;
+    await probe.close();
+    const synced = [];
+    let fail = false;
+    t.mock.method(prototype, 'sync', async function () {
+      if (fail) throw new Error('sync failed');
+      synced.push((await this.stat()).isDirectory() ? 'directory' : 'file');
+      return original.call(this);
+    });
+    store = await openStore(join(directory, 'nested', 'run'));
+    const h = harness();
+    let calls = 0;
+    const agent = createProvider({ fetchImpl: async (url, options) => {
+      assert.equal(synced[0], 'file');
+      assert.ok(synced.slice(1).includes('directory'));
+      if (url.endsWith('/models')) {
+        synced.length = 0;
+        return response(catalog);
+      }
+      calls++;
+      const context = JSON.parse(JSON.parse(options.body).messages[1].content);
+      return response(completion(context));
+    } });
+    const outcome = await dispatchRun({ objective: 'Check durable reservations' }, { ...h.options, store, provider: agent });
+    assert.equal(outcome.status, 'resolved');
+    assert.equal(calls, 1);
+    await store.close();
+    store = await openStore(join(directory, 'sync-failure'));
+    fail = true;
+    await assert.rejects(dispatchRun({ objective: 'Do not send' }, { store, provider: agent }), /sync failed/);
+    assert.equal(calls, 1);
+  } finally {
+    t.mock.restoreAll();
+    await store?.close();
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test('isolated persisted run decomposes, resolves dependencies and synthesizes a caller result', async () => {

@@ -1,6 +1,6 @@
 import { MangoClient } from '@jkershaw/mangodb';
 import { mkdir, open, unlink } from 'node:fs/promises';
-import { resolve, join } from 'node:path';
+import { resolve, join, dirname } from 'node:path';
 import { validateGraph } from '../core/graph.js';
 
 export async function openStore(directory) {
@@ -41,6 +41,25 @@ export async function openStore(directory) {
       if (existing && state.revision !== expectedRevision + 1) throw new Error('Revision must increase by one');
       // Opaque JSON avoids MangoDB interpreting user-supplied $oid/$date objects.
       await snapshots.replaceOne({ _id: 'graph' }, { _id: 'graph', stateJSON: JSON.stringify(state) }, { upsert: true });
+      // MangoDB renames without fsync. Flush the snapshot and directory entries before allowing inference.
+      const snapshot = await open(join(path, 'tag', 'snapshots.json'), 'r+');
+      try {
+        await snapshot.sync();
+      } finally {
+        await snapshot.close();
+      }
+      let directory = join(path, 'tag');
+      while (true) {
+        const handle = await open(directory, 'r');
+        try {
+          await handle.sync();
+        } finally {
+          await handle.close();
+        }
+        const parent = dirname(directory);
+        if (parent === directory) break;
+        directory = parent;
+      }
     },
     async close() {
       if (closed) return;
