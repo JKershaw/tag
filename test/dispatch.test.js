@@ -8,6 +8,7 @@ import { promisify } from 'node:util';
 import { dispatchRun, executionLimits } from '../core/dispatch.js';
 import { createProvider, allowedModels, allowedProviders } from '../adapters/openrouter.js';
 import { openStore } from '../adapters/mango.js';
+import { dispatch } from '../adapters/dispatch.js';
 
 const model = allowedModels[0];
 const provider = allowedProviders[0];
@@ -369,5 +370,88 @@ test('CLI returns the contract without credentials and refuses the old unbudgete
     await assert.rejects(promisify(execFile)(process.execPath, [cli, 'iterate']), /Unbudgeted/);
   } finally {
     await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('public dispatch API owns the lock, returns the contract, and never reuses a run', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'tag-public-dispatch-'));
+  const apiKey = 'test-only-credential';
+  let calls = 0;
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    await assert.rejects(openStore(directory), /locked/);
+    assert.equal(options.redirect, 'error');
+    if (url.endsWith('/models')) {
+      assert.equal(options.headers?.Authorization, undefined);
+      return response(catalog);
+    }
+    calls++;
+    assert.equal(options.headers.Authorization, ['Bearer', apiKey].join(' '));
+    return response(completion(JSON.parse(JSON.parse(options.body).messages[1].content)));
+  });
+  try {
+    const outcome = await dispatch({ objective: 'Return a bounded answer' }, { directory, apiKey });
+    assert.deepEqual(Object.keys(outcome).sort(), ['blockers', 'evidence', 'result', 'status', 'stoppingReason', 'usage']);
+    assert.equal(outcome.status, 'resolved');
+    assert.equal(outcome.usage.generations, 1);
+    const store = await openStore(directory);
+    try {
+      const graph = await store.load();
+      assert.deepEqual(graph.run.usage, outcome.usage);
+      assert.equal(graph.run.stoppingReason, outcome.stoppingReason);
+      assert.equal(JSON.stringify({ graph, outcome }).includes(apiKey), false);
+    } finally {
+      await store.close();
+    }
+    await assert.rejects(dispatch({ objective: 'Do not restart' }, { directory, apiKey }), /empty store/);
+    assert.equal(calls, 1);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('public dispatch rejects task-supplied capabilities and releases the store after invalid input', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'tag-public-input-'));
+  let calls = 0;
+  t.mock.method(globalThis, 'fetch', async () => { calls++; throw new Error('No network expected'); });
+  try {
+    for (const field of ['model', 'provider', 'apiKey', 'directory', 'tools']) {
+      await assert.rejects(dispatch({ objective: 'No host overrides', [field]: 'untrusted' }, { directory }), /Expected/);
+    }
+    const outcome = await dispatch({ objective: 'No inference', limits: { maxCostUsd: 0 } }, { directory });
+    assert.equal(outcome.stoppingReason, 'budget_exhausted');
+    assert.equal(calls, 0);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('pricing transport failures stop before inference with complete zero-attempt accounting', async () => {
+  const h = harness();
+  let calls = 0;
+  h.options.provider = createProvider({ fetchImpl: async () => {
+    calls++;
+    throw new Error('Private network details');
+  } });
+  const outcome = await h.run();
+  assert.equal(calls, 1);
+  assert.equal(outcome.stoppingReason, 'provider_preflight_failed');
+  assert.equal(outcome.usage.generations, 0);
+  assert.equal(outcome.usage.costUsd, 0);
+  assert.equal(outcome.usage.accountingComplete, true);
+  assert.equal(outcome.usage.reservedCostUsd, 0);
+  assert.equal(JSON.stringify(h.graph()).includes('Private network details'), false);
+});
+
+test('Retry-After HTTP dates respect spacing and reject excessive delays', async t => {
+  const time = Date.parse('2026-09-14T12:00:00Z');
+  t.mock.method(Date, 'now', () => time);
+  for (const [delay, expectedCalls] of [[5000, 2], [61000, 1]]) {
+    const h = harness((context, call) => call === 1
+      ? response({}, 429, { 'retry-after': new Date(time + delay).toUTCString() })
+      : response(completion(context)));
+    const outcome = await h.run();
+    assert.equal(h.calls(), expectedCalls);
+    assert.equal(outcome.stoppingReason, expectedCalls === 2 ? 'root_terminal' : 'rate_limited');
+    assert.deepEqual(h.waits, expectedCalls === 2 ? [delay] : []);
   }
 });
