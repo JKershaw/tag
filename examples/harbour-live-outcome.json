@@ -1,0 +1,27 @@
+{
+  "status": "failed",
+  "result": "Execution stopped: provider_preflight_failed. No complete root synthesis is available.",
+  "evidence": [],
+  "blockers": [
+    {
+      "id": "root",
+      "status": "ready",
+      "terminal": false,
+      "runnable": true,
+      "reason": null,
+      "prerequisites": [],
+      "children": []
+    }
+  ],
+  "usage": {
+    "generations": 0,
+    "promptTokens": 0,
+    "completionTokens": 0,
+    "totalTokens": 0,
+    "knownCostUsd": 0,
+    "costUsd": 0,
+    "accountingComplete": true,
+    "reservedCostUsd": 0
+  },
+  "stoppingReason": "provider_preflight_failed"
+}

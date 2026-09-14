@@ -19,7 +19,10 @@
   "bin": {
     "tag": "./cli.js"
   },
-  "exports": "./core/graph.js",
+  "exports": {
+    ".": "./core/graph.js",
+    "./dispatch": "./adapters/dispatch.js"
+  },
   "dependencies": {
     "@jkershaw/mangodb": "0.1.4"
   }

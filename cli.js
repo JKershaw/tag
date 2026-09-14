@@ -3,10 +3,9 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { seed, validateGraph, nextNode, runnable, explain, buildContext, applyProposal, humanUpdate } from './core/graph.js';
-import { iterate } from './core/iterate.js';
 import { protocol } from './core/protocol.js';
 import { openStore } from './adapters/mango.js';
-import { createAgent } from './adapters/openai.js';
+import { dispatch } from './adapters/dispatch.js';
 
 const print = value => console.log(JSON.stringify(value, null, 2));
 const readJSON = async path => JSON.parse(await readFile(resolve(path), 'utf8'));
@@ -16,21 +15,26 @@ const usage = `TAG — Tiny Agent Node Graph & Lightweight Executor
   tag inspect <id> | explain <id> | context [id]
   tag apply <proposal.json>
   tag answer <question-id> <answer> | resume <node-id> <evidence>
-  tag iterate [--count 1..30]
+  tag dispatch <task.json> --store <new-run-directory>
 Options: --store <directory> (default .tag), --from <snapshot>, --help
-Model: TAG_ENDPOINT (full chat completions URL), TAG_MODEL, TAG_API_KEY.
+Model: OPENROUTER_API_KEY, optional TAG_MODEL (free allowlist only).
 Without a model, use context + apply with an external coding agent.
 Tool proposals require explicit host action; no model commands are executed.`;
 
 async function main() {
   const { values, positionals } = parseArgs({
     allowPositionals: true,
-    options: { store: { type: 'string', default: '.tag' }, count: { type: 'string' }, from: { type: 'string' }, help: { type: 'boolean' } },
+    options: { store: { type: 'string', default: '.tag' }, from: { type: 'string' }, help: { type: 'boolean' } },
   });
   const [command, ...args] = positionals;
   if (values.help || !command) return console.log(usage);
   if (command === 'protocol') return print(protocol);
-  if (!['init', 'status', 'graph', 'history', 'inspect', 'explain', 'context', 'apply', 'answer', 'resume', 'iterate'].includes(command)) {
+  if (command === 'iterate') throw new Error('Unbudgeted model iteration is disabled; use dispatch with explicit run limits');
+  if (command === 'dispatch') {
+    if (args.length !== 1 || values.store === '.tag') throw new Error('dispatch requires a task JSON file and an isolated --store directory');
+    return print(await dispatch(await readJSON(args[0]), { directory: values.store, model: process.env.TAG_MODEL }));
+  }
+  if (!['init', 'status', 'graph', 'history', 'inspect', 'explain', 'context', 'apply', 'answer', 'resume'].includes(command)) {
     throw new Error(`Unknown command: ${command}`);
   }
   const store = await openStore(values.store);
@@ -76,16 +80,6 @@ async function main() {
         const updated = humanUpdate(graph, args[0], args.slice(1).join(' '), command === 'answer');
         await store.save(updated, graph.revision);
         return print({ revision: updated.revision });
-      }
-      case 'iterate': {
-        if (!process.env.TAG_ENDPOINT) throw new Error('Configure TAG_ENDPOINT and TAG_MODEL, or use context + apply with an external agent');
-        const agent = createAgent({
-          endpoint: process.env.TAG_ENDPOINT, model: process.env.TAG_MODEL, apiKey: process.env.TAG_API_KEY,
-          instructions: await readFile(new URL('./bootstrap.md', import.meta.url), 'utf8'),
-        });
-        const result = await iterate({ store, agent, count: Number(values.count ?? 1) });
-        print(result);
-        if (result.stop === 'agent_error') process.exitCode = 1;
       }
     }
   } finally {

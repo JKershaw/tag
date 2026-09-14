@@ -1,0 +1,13 @@
+{
+  "objective": "Check whether this proposed closed-scope TAG run fits Harbour's generation and spend limits. Report total estimated spend, remaining spend allowance, remaining generations, and a concise accept/reject recommendation. Use only the supplied planning data; no tools or external facts are needed.",
+  "context": "Harbour is evaluating a task with three planned model generations costing an estimated $0.012, $0.018, and $0.000 respectively. Its task cap is five generations and $0.10. These are hypothetical planning estimates, not actual inference charges for this execution.",
+  "limits": {
+    "concurrency": 1,
+    "maxGenerations": 5,
+    "maxCostUsd": 0.10,
+    "maxRetries": 1,
+    "minDelayMs": 3000,
+    "maxOutputTokens": 1536,
+    "maxNodes": 25
+  }
+}
