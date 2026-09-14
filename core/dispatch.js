@@ -42,6 +42,7 @@ export async function dispatchRun(task, { store, provider, wait = sleep, now = (
     limits, model: provider.model, provider: provider.name, maxGraphBytes,
     usage: { generations: 0, promptTokens: 0, completionTokens: 0, totalTokens: 0,
       knownCostUsd: 0, costUsd: 0, accountingComplete: true, reservedCostUsd: 0 },
+    pricing: { status: 'unknown', reason: 'not_checked' },
     attempts: [], stoppingReason: null,
   };
   await store.save(graph);
@@ -74,7 +75,13 @@ export async function dispatchRun(task, { store, provider, wait = sleep, now = (
   try {
     graph.run.pricing = await provider.verify();
   } catch {
-    graph.run.preflightError = 'Provider allowlist/pricing verification unavailable or rejected';
+    graph.run.pricing = { status: 'unknown', reason: 'verification_error' };
+  }
+  if (!['known_free', 'known_priced', 'unknown'].includes(graph.run.pricing?.status)) {
+    graph.run.pricing = { status: 'unknown', reason: 'invalid_verification' };
+  }
+  if (graph.run.pricing.status !== 'known_free') {
+    graph.run.preflightError = 'Only known-free pricing is permitted; see run.pricing';
     return stop('provider_preflight_failed');
   }
   let lastFinished = null;

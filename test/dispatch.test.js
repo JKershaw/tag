@@ -75,6 +75,7 @@ test('zero budget stops before pricing or inference and terminalizes the root', 
   assert.equal(outcome.stoppingReason, 'budget_exhausted');
   assert.equal(outcome.status, 'failed');
   assert.equal(outcome.usage.generations, 0);
+  assert.deepEqual(h.graph().run.pricing, { status: 'unknown', reason: 'not_checked' });
   assert.equal(h.calls(), 0);
 });
 
@@ -225,6 +226,138 @@ test('allowlists, missing prices and nonzero tariffs prevent inference', async (
     assert.equal(h.graph().run.usage.generations, 0);
   }
   await assert.rejects(createProvider().generate({}, 128), /Unverified/);
+});
+
+test('pricing states distinguish valid zero, valid nonzero and incomplete or malformed tariffs', async t => {
+  const cases = [
+    ['string zeros', { prompt: '0.000', completion: '0', request: '0' }, 'known_free'],
+    ['numeric zeros', { prompt: 0, completion: 0 }, 'known_free'],
+    ['exponent zeros', { prompt: '0e-10', completion: '0.0E+2' }, 'known_free'],
+    ['priced prompt', { prompt: '0.001', completion: '0' }, 'known_priced'],
+    ['priced completion', { prompt: 0, completion: 0.002 }, 'known_priced'],
+    ['priced extra component', { prompt: '0', completion: '0', request: '1e-8' }, 'known_priced'],
+    ['missing', undefined, 'unknown'],
+    ['null', null, 'unknown'],
+    ['empty', {}, 'unknown'],
+    ['missing completion', { prompt: '0' }, 'unknown'],
+    ['array', [], 'unknown'],
+    ['string', '0', 'unknown'],
+    ...['', ' ', 'free', '0x0', '-1', 'NaN', 'Infinity', '1e999', '1e-999', null, false, [], {}]
+      .map(value => [`invalid component ${JSON.stringify(value)}`, { prompt: '0', completion: value }, 'unknown']),
+    ['invalid extra component', { prompt: '0', completion: '0', request: null }, 'unknown'],
+    ['partially known price', { prompt: '0.01', completion: null }, 'unknown'],
+  ];
+  for (const [name, pricing, status] of cases) await t.test(name, async () => {
+    const h = harness();
+    let calls = 0;
+    h.options.provider = createProvider({ fetchImpl: async (url, options) => {
+      if (url.endsWith('/models')) return response({ data: [{ id: model, pricing }] });
+      calls++;
+      assert.equal(h.graph().run.pricing.status, 'known_free');
+      return response(completion(JSON.parse(JSON.parse(options.body).messages[1].content)));
+    } });
+    const outcome = await h.run();
+    const record = h.graph().run.pricing;
+    assert.equal(record.status, status);
+    assert.equal(record.modelPresent, true);
+    assert.equal(record.paidInference, false);
+    assert.equal(record.source, 'https://openrouter.ai/api/v1/models');
+    assert.ok(Number.isFinite(Date.parse(record.checkedAt)));
+    assert.equal(outcome.usage.costUsd, 0);
+    assert.equal(outcome.usage.accountingComplete, true);
+    assert.equal(outcome.usage.reservedCostUsd, 0);
+    assert.equal(calls, status === 'known_free' ? 1 : 0);
+    assert.equal(outcome.stoppingReason, status === 'known_free' ? 'root_terminal' : 'provider_preflight_failed');
+    assert.equal(record.allAdvertisedPricesZero, status === 'unknown' ? null : status === 'known_free');
+    if (status === 'unknown') {
+      assert.equal(record.promptPriceUsd, null);
+      assert.equal(record.completionPriceUsd, null);
+      assert.equal(record.reason, pricing == null ? 'pricing_missing' : 'pricing_invalid');
+    } else {
+      assert.equal(record.promptPriceUsd, Number(pricing.prompt));
+      assert.equal(record.completionPriceUsd, Number(pricing.completion));
+    }
+    if (status !== 'known_free') await assert.rejects(h.options.provider.generate({}, 128), /Unverified/);
+  });
+});
+
+test('unavailable or malformed catalogue discovery is unknown, not priced or free', async () => {
+  for (const [reply, reason] of [
+    [() => response({}, 503), 'http_error'],
+    [() => new Response('{'), 'invalid_catalogue'],
+    [() => response(null), 'invalid_catalogue'],
+    [() => response({ data: {} }), 'invalid_catalogue'],
+    [() => response({ data: [null] }), 'invalid_catalogue'],
+    [() => response({ data: [] }), 'model_unavailable'],
+    [() => response({ data: [catalog.data[0], catalog.data[0]] }), 'ambiguous_model'],
+  ]) {
+    const h = harness();
+    let calls = 0;
+    h.options.provider = createProvider({ fetchImpl: async url => {
+      calls++;
+      assert.ok(url.endsWith('/models'));
+      return reply();
+    } });
+    assert.equal((await h.run()).stoppingReason, 'provider_preflight_failed');
+    assert.equal(h.graph().run.pricing.status, 'unknown');
+    assert.equal(h.graph().run.pricing.reason, reason);
+    assert.equal(h.graph().run.usage.generations, 0);
+    assert.equal(calls, 1);
+  }
+});
+
+test('reverification revokes free authorization on priced or unknown discovery', async () => {
+  for (const pricing of [{ prompt: '0', completion: '0.01' }, null]) {
+    let current = catalog;
+    const agent = createProvider({ fetchImpl: async () => response(current) });
+    assert.equal((await agent.verify()).status, 'known_free');
+    current = { data: [{ id: model, pricing }] };
+    assert.equal((await agent.verify()).status, pricing ? 'known_priced' : 'unknown');
+    await assert.rejects(agent.generate({}, 128), /Unverified/);
+  }
+});
+
+test('dispatch fails closed on thrown or unclassified provider verification', async () => {
+  for (const verify of [async () => { throw new Error('Private details'); }, async () => undefined,
+    async () => ({ allAdvertisedPricesZero: true })]) {
+    const h = harness();
+    h.options.provider = { model, name: provider, verify,
+      generate: async () => assert.fail('Must not generate') };
+    assert.equal((await h.run()).stoppingReason, 'provider_preflight_failed');
+    assert.equal(h.graph().run.pricing.status, 'unknown');
+    assert.equal(h.graph().run.usage.generations, 0);
+    assert.equal(JSON.stringify(h.graph()).includes('Private details'), false);
+  }
+});
+
+test('all three pricing states survive MangoDB close and reopen', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'tag-pricing-'));
+  try {
+    for (const [status, pricing] of [
+      ['known_free', { prompt: '0', completion: '0' }],
+      ['known_priced', { prompt: '0.01', completion: '0' }],
+      ['unknown', null],
+    ]) {
+      let store = await openStore(join(directory, status));
+      try {
+        const agent = createProvider({ fetchImpl: async (url, options) => url.endsWith('/models')
+          ? response({ data: [{ id: model, pricing }] })
+          : response(completion(JSON.parse(JSON.parse(options.body).messages[1].content))) });
+        const outcome = await dispatchRun({ objective: 'Preserve pricing state' }, { store, provider: agent });
+        const before = await store.load();
+        await store.close();
+        store = await openStore(join(directory, status));
+        const after = await store.load();
+        assert.deepEqual(after, before);
+        assert.equal(after.run.pricing.status, status);
+        assert.deepEqual(after.run.usage, outcome.usage);
+      } finally {
+        await store.close();
+      }
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test('untrusted response identity and oversized bodies cannot grow the audit without bounds', async () => {
@@ -440,6 +573,9 @@ test('pricing transport failures stop before inference with complete zero-attemp
   assert.equal(outcome.usage.accountingComplete, true);
   assert.equal(outcome.usage.reservedCostUsd, 0);
   assert.equal(JSON.stringify(h.graph()).includes('Private network details'), false);
+  assert.equal(h.graph().run.pricing.status, 'unknown');
+  assert.equal(h.graph().run.pricing.reason, 'transport_error');
+  assert.equal(h.graph().run.pricing.modelPresent, null);
 });
 
 test('an unavailable allowlisted model stops without selecting another catalogue model', async () => {
@@ -456,6 +592,9 @@ test('an unavailable allowlisted model stops without selecting another catalogue
   assert.equal(outcome.usage.costUsd, 0);
   assert.equal(calls, 1);
   assert.equal(h.graph().run.model, model);
+  assert.equal(h.graph().run.pricing.status, 'unknown');
+  assert.equal(h.graph().run.pricing.reason, 'model_unavailable');
+  assert.equal(h.graph().run.pricing.modelPresent, false);
 });
 
 test('Retry-After HTTP dates respect spacing and reject excessive delays', async t => {
