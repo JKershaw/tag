@@ -133,3 +133,31 @@ are not atomic; verify actual effects before retrying after a crash.
 
 Tests use built-in `node:test`, including real MangoDB reopen/locking checks.
 There are no separate lint or build tools.
+
+## Self-development run
+
+`state.json` records **seven applied generations** and one explicit human
+transition recording the user's existing authorization:
+
+1. A fresh worker decomposed the bootstrap into context, diagnostics, and
+   continuity tasks using TAG's projected graph.
+2. The host implemented and verified bounded context.
+3. The host implemented and verified frontier explanations.
+4. A different fresh worker reconstructed progress from graph-only context.
+5. TAG recorded independent review findings as a new hardening task.
+6. The host reproduced and fixed all three findings, with regression tests.
+7. A fresh worker synthesized the resolved children and resolved the root.
+
+The run stopped with no runnable nodes, below the 30-generation ceiling.
+This is a real external-host dogfood run, **not** an unattended provider run
+or proof of superiority over conversation-based agents. Code changes and
+tests ran in the trusted host; no model-supplied commands were auto-executed.
+Full proposals, observations, decisions and results are in the exported graph.
+
+Inspect the recorded run in a separate MangoDB store:
+
+```sh
+node cli.js init --from state.json --store /tmp/tag-replay
+node cli.js status --store /tmp/tag-replay
+node cli.js history --store /tmp/tag-replay
+```
