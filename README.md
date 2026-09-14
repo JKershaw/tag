@@ -63,11 +63,13 @@ nothing. Node IDs are short alphanumeric identifiers with `.`, `_`, or `-`.
 New nodes must descend from the current node; other mutations can touch only
 that node and nodes created in the same transition.
 
-## Harbour-style bounded dispatch
+## External-task bounded dispatch
 
-Harbour owns task selection, context, and limits. TAG owns decomposition,
+The trusted caller owns task selection, context, and limits. TAG owns decomposition,
 dependencies, information gaps, scheduling, and explicit parent synthesis.
 There is no service and the caller does not need the internal graph.
+**Harbour is not integrated.** The CLI and exported API are caller-neutral;
+the older Harbour-named examples below are historical fixtures, not a connector.
 
 ```sh
 export OPENROUTER_API_KEY=... # supply through the environment, never a task file
@@ -200,7 +202,57 @@ graph coupling was attempted. Harbour still needs to invoke this CLI/API and
 consume the outcome; its source is not part of this repository.
 Subsequent review added regression tests for interrupted accounting commits and
 filesystem synchronization; pending attempts cannot appear fully accounted.
-The final suite passes all 33 tests.
+That milestone's final suite passed all 33 tests.
+
+### Real MangoDB task attempts (2026-09-14)
+
+The existing safety envelope and external dispatch interface were retained,
+not replaced or relaxed. Additional offline coverage verifies the public API's
+exclusive lock, store cleanup after invalid input, rejection of task-supplied
+host capabilities, credential omission from the audit, pricing transport
+failures, unavailable allowlisted models, and HTTP-date `Retry-After` handling.
+
+Three small, real MangoDB checks use the installed `@jkershaw/mangodb` in
+isolated temporary directories:
+
+| Task fixture under `examples/mangodb/` | Observed host result |
+| --- | --- |
+| `lifecycle-task.json` | Insert/update/delete survived a new client: `a.count=5`, `b` absent, one document remaining. |
+| `query-task.json` | Filtering, descending sort, projection and limit after reopen returned only `b:9`, then `d:7`. |
+| `snapshot-task.json` | TAG's opaque JSON, tool input and audit survived reopening; the action stayed proposed, never executed. |
+
+`test/mangodb-tasks.test.js` reproduces these observations. **All 41 tests
+passed before the live dispatches**; a subsequent regression for the observed
+unavailable-model condition brings the suite to 42. The tasks ask TAG to assess
+supplied host observations, not to execute database commands. These are narrow
+local checks, not upstream MangoDB fixes or comprehensive MongoDB compatibility
+testing. No other repository or Harbour code was changed.
+
+Each fixture was dispatched once, sequentially, through the real CLI, into a
+different store under `/tmp/tag-mangodb-live-ZhbGp1`. Each allowed two inference
+attempts, $0.03, concurrency one, **zero retries**, at least three-second spacing,
+1,536 output tokens and three graph nodes. The combined configured allowance was
+six attempts/$0.09; only allowlisted free inference was permitted.
+
+**All three stopped at `provider_preflight_failed`: zero inference attempts,
+zero tokens, $0.00 actual inference cost, no reservations, and one node per graph.**
+No model produced an assessment. Unlike the earlier milestone, DNS succeeded
+and a separate unauthenticated catalogue diagnostic returned HTTP 200, but
+neither allowlisted model had available pricing in that response. TAG did not
+switch models, relax verification, or attempt paid fallback.
+
+The exact CLI stdout and exported audit for each task are preserved beside its
+fixture as `<name>-outcome.json` and `<name>-graph.json`. The sanitized catalogue
+diagnostic is `examples/mangodb/catalogue-check.json`.
+Live model completion remains unverified. Before another authorized attempt,
+confirm availability and zero pricing for an allowlisted model/backend; use a
+**new** store, never the previous run directory. For example, after rerunning
+the host tests:
+
+```sh
+node cli.js dispatch /absolute/path/to/tag/examples/mangodb/lifecycle-task.json \
+  --store /absolute/path/to/new-lifecycle-run
+```
 
 ## Graph rules and human boundaries
 

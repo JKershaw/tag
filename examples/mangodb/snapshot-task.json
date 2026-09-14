@@ -1,0 +1,13 @@
+{
+  "objective": "Assess whether the observed TAG snapshot round trip preserves opaque tool input and audit history through real MangoDB. Cite the host test, distinguish persistence from tool execution, and avoid broader compatibility claims.",
+  "context": "Trusted-host observation from test/mangodb-tasks.test.js, snapshot case: TAG saved a graph containing an unexecuted external tool proposal with values [{$oid:'external-id',label:'keep'},{$date:'not-a-date',extra:true}]. The MangoDB snapshot stored stateJSON as a string. After closing and reopening the store, the complete graph, proposal input, and history were deeply equal to the saved state; the action remained proposed and the root remained needs_human. Expected: preserve all JSON keys and audit history without executing the proposal. Only isolated temporary directories were used.",
+  "limits": {
+    "maxGenerations": 2,
+    "maxCostUsd": 0.03,
+    "concurrency": 1,
+    "maxRetries": 0,
+    "minDelayMs": 3000,
+    "maxOutputTokens": 1536,
+    "maxNodes": 3
+  }
+}

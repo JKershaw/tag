@@ -1,0 +1,17 @@
+{
+  "diagnostic": "Unauthenticated catalogue access after the three live dispatches; no inference or credentials sent",
+  "endpoint": "https://openrouter.ai/api/v1/models",
+  "dnsLookup": "succeeded",
+  "status": 200,
+  "models": [
+    {
+      "id": "meta-llama/llama-3.3-70b-instruct:free",
+      "pricing": null
+    },
+    {
+      "id": "qwen/qwen3-4b:free",
+      "pricing": null
+    }
+  ],
+  "interpretation": "Neither allowlisted model had available pricing in this response. Null denotes missing model or pricing, not a zero tariff. No fallback was attempted."
+}
