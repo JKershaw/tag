@@ -1,0 +1,436 @@
+{
+  "before": {
+    "checkedAt": "2026-09-14T20:57:10.487Z",
+    "requestedRouter": "openrouter/free",
+    "directory": "/tmp/tag-routing-diagnostic-Eb52bx",
+    "routingPolicy": {
+      "only": [
+        "Chutes"
+      ],
+      "allow_fallbacks": false,
+      "require_parameters": true,
+      "max_price": {
+        "prompt": 0,
+        "completion": 0
+      }
+    },
+    "httpStatus": 404,
+    "error": {
+      "code": 404,
+      "message": "No allowed providers are available for the selected model. Providers serving inclusionai/ling-3.0-flash-vl-20260910:free, inclusionai/ling-3.0-flash-fin-20260827:free, google/gemma-4-26b-a4b-it-20260403:free, liquid/lfm-2.5-2.6b-20260811:free, nex-agi/nex-n2.5-pro-20260907:free, nex-agi/nex-n2.5-mini-20260908:free, poolside/laguna-xs-2.1-20260625:free, nvidia/nemotron-3-nano-omni-30b-a3b-reasoning-20260428:free: novita, google-ai-studio, liquid, nex-agi, poolside, nvidia, but your request's provider.only preference permits only: chutes."
+    },
+    "outcome": {
+      "status": "failed",
+      "result": "Execution stopped: provider_unavailable. No complete root synthesis is available.",
+      "evidence": [],
+      "blockers": [
+        {
+          "id": "root",
+          "status": "ready",
+          "terminal": false,
+          "runnable": true,
+          "reason": null,
+          "prerequisites": [],
+          "children": []
+        }
+      ],
+      "usage": {
+        "generations": 1,
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "totalTokens": 0,
+        "knownCostUsd": 0,
+        "costUsd": null,
+        "accountingComplete": false,
+        "reservedCostUsd": 0.03
+      },
+      "stoppingReason": "provider_unavailable"
+    },
+    "graph": {
+      "protocolVersion": 1,
+      "revision": 3,
+      "generation": 1,
+      "nodes": [
+        {
+          "id": "root",
+          "objective": "Diagnose free-router endpoint eligibility. Resolve this diagnostic task without using tools.",
+          "parentId": null,
+          "type": "task",
+          "context": "",
+          "status": "failed",
+          "blockedBy": [],
+          "references": [],
+          "evidence": [],
+          "decisions": [],
+          "actions": [],
+          "result": "Execution stopped: provider_unavailable. No complete root synthesis is available.",
+          "reason": "provider_unavailable",
+          "attempts": 1
+        }
+      ],
+      "history": [
+        {
+          "revision": 2,
+          "generation": 1,
+          "nodeId": "root",
+          "outcome": "rejected",
+          "error": "provider_unavailable"
+        },
+        {
+          "revision": 3,
+          "generation": 1,
+          "nodeId": "root",
+          "outcome": "stopped",
+          "stoppingReason": "provider_unavailable"
+        }
+      ],
+      "run": {
+        "limits": {
+          "maxGenerations": 1,
+          "maxCostUsd": 0.03,
+          "concurrency": 1,
+          "maxRetries": 0,
+          "minDelayMs": 3000,
+          "maxOutputTokens": 1536,
+          "maxNodes": 3
+        },
+        "model": "openrouter/free",
+        "provider": "Chutes",
+        "maxGraphBytes": 1048576,
+        "usage": {
+          "generations": 1,
+          "promptTokens": 0,
+          "completionTokens": 0,
+          "totalTokens": 0,
+          "knownCostUsd": 0,
+          "costUsd": null,
+          "accountingComplete": false,
+          "reservedCostUsd": 0.03
+        },
+        "pricing": {
+          "status": "known_free",
+          "reason": "all_prices_zero",
+          "model": "openrouter/free",
+          "provider": "Chutes",
+          "source": "https://openrouter.ai/api/v1/models",
+          "checkedAt": "2026-09-14T20:57:10.495Z",
+          "modelPresent": true,
+          "promptPriceUsd": 0,
+          "completionPriceUsd": 0,
+          "allAdvertisedPricesZero": true,
+          "paidInference": false
+        },
+        "attempts": [
+          {
+            "generation": 1,
+            "nodeId": "root",
+            "model": "openrouter/free",
+            "provider": "Chutes",
+            "status": "rejected",
+            "requestedModel": "openrouter/free",
+            "actualModel": null,
+            "startedAt": "2026-09-14T20:57:10.587Z",
+            "retry": 0,
+            "finishedAt": "2026-09-14T20:57:10.723Z",
+            "reportedCostUsd": null,
+            "usage": null,
+            "error": "provider_unavailable",
+            "httpStatus": 404
+          }
+        ],
+        "stoppingReason": "provider_unavailable"
+      }
+    }
+  },
+  "after": {
+    "directory": "/tmp/tag-routing-unpinned-C3vBD8",
+    "outcome": {
+      "status": "failed",
+      "result": "Execution stopped: provider_unavailable. No complete root synthesis is available.",
+      "evidence": [],
+      "blockers": [
+        {
+          "id": "root",
+          "status": "ready",
+          "terminal": false,
+          "runnable": true,
+          "reason": null,
+          "prerequisites": [],
+          "children": []
+        }
+      ],
+      "usage": {
+        "generations": 1,
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "totalTokens": 0,
+        "knownCostUsd": 0,
+        "costUsd": null,
+        "accountingComplete": false,
+        "reservedCostUsd": 0.03
+      },
+      "stoppingReason": "provider_unavailable"
+    },
+    "graph": {
+      "protocolVersion": 1,
+      "revision": 3,
+      "generation": 1,
+      "nodes": [
+        {
+          "id": "root",
+          "objective": "Diagnose free-router endpoint eligibility. Resolve this diagnostic task without using tools.",
+          "parentId": null,
+          "type": "task",
+          "context": "",
+          "status": "failed",
+          "blockedBy": [],
+          "references": [],
+          "evidence": [],
+          "decisions": [],
+          "actions": [],
+          "result": "Execution stopped: provider_unavailable. No complete root synthesis is available.",
+          "reason": "provider_unavailable",
+          "attempts": 1
+        }
+      ],
+      "history": [
+        {
+          "revision": 2,
+          "generation": 1,
+          "nodeId": "root",
+          "outcome": "rejected",
+          "error": "provider_unavailable"
+        },
+        {
+          "revision": 3,
+          "generation": 1,
+          "nodeId": "root",
+          "outcome": "stopped",
+          "stoppingReason": "provider_unavailable"
+        }
+      ],
+      "run": {
+        "limits": {
+          "maxGenerations": 1,
+          "maxCostUsd": 0.03,
+          "concurrency": 1,
+          "maxRetries": 0,
+          "minDelayMs": 3000,
+          "maxOutputTokens": 1536,
+          "maxNodes": 3
+        },
+        "model": "openrouter/free",
+        "provider": null,
+        "maxGraphBytes": 1048576,
+        "routingPolicy": {
+          "allow_fallbacks": false,
+          "require_parameters": true,
+          "max_price": {
+            "prompt": 0,
+            "completion": 0
+          }
+        },
+        "usage": {
+          "generations": 1,
+          "promptTokens": 0,
+          "completionTokens": 0,
+          "totalTokens": 0,
+          "knownCostUsd": 0,
+          "costUsd": null,
+          "accountingComplete": false,
+          "reservedCostUsd": 0.03
+        },
+        "pricing": {
+          "status": "known_free",
+          "reason": "all_prices_zero",
+          "model": "openrouter/free",
+          "provider": null,
+          "source": "https://openrouter.ai/api/v1/models",
+          "checkedAt": "2026-09-14T20:59:55.253Z",
+          "modelPresent": true,
+          "promptPriceUsd": 0,
+          "completionPriceUsd": 0,
+          "allAdvertisedPricesZero": true,
+          "paidInference": false
+        },
+        "attempts": [
+          {
+            "generation": 1,
+            "nodeId": "root",
+            "model": "openrouter/free",
+            "provider": null,
+            "status": "rejected",
+            "requestedModel": "openrouter/free",
+            "actualModel": null,
+            "requestedProvider": null,
+            "actualProvider": null,
+            "routingPolicy": {
+              "allow_fallbacks": false,
+              "require_parameters": true,
+              "max_price": {
+                "prompt": 0,
+                "completion": 0
+              }
+            },
+            "startedAt": "2026-09-14T20:59:55.358Z",
+            "retry": 0,
+            "finishedAt": "2026-09-14T20:59:55.545Z",
+            "reportedCostUsd": null,
+            "usage": null,
+            "error": "provider_unavailable",
+            "httpStatus": 404
+          }
+        ],
+        "stoppingReason": "provider_unavailable"
+      }
+    }
+  },
+  "unpinnedError": {
+    "directory": "/tmp/tag-routing-unpinned-error-qU2fPy",
+    "httpStatus": 404,
+    "error": {
+      "code": 404,
+      "message": "0 endpoints out of 3 requested are available matching your guardrail restrictions and data policy. We removed them for the following reasons (an endpoint may have matched multiple reasons):\nZDR violation (guardrail): 3 endpoints excluded; configurable at https://openrouter.ai/workspaces/default/guardrails"
+    },
+    "outcome": {
+      "status": "failed",
+      "result": "Execution stopped: provider_unavailable. No complete root synthesis is available.",
+      "evidence": [],
+      "blockers": [
+        {
+          "id": "root",
+          "status": "ready",
+          "terminal": false,
+          "runnable": true,
+          "reason": null,
+          "prerequisites": [],
+          "children": []
+        }
+      ],
+      "usage": {
+        "generations": 1,
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "totalTokens": 0,
+        "knownCostUsd": 0,
+        "costUsd": null,
+        "accountingComplete": false,
+        "reservedCostUsd": 0.03
+      },
+      "stoppingReason": "provider_unavailable"
+    },
+    "graph": {
+      "protocolVersion": 1,
+      "revision": 3,
+      "generation": 1,
+      "nodes": [
+        {
+          "id": "root",
+          "objective": "Diagnose free-router endpoint eligibility. Resolve this diagnostic task without using tools.",
+          "parentId": null,
+          "type": "task",
+          "context": "",
+          "status": "failed",
+          "blockedBy": [],
+          "references": [],
+          "evidence": [],
+          "decisions": [],
+          "actions": [],
+          "result": "Execution stopped: provider_unavailable. No complete root synthesis is available.",
+          "reason": "provider_unavailable",
+          "attempts": 1
+        }
+      ],
+      "history": [
+        {
+          "revision": 2,
+          "generation": 1,
+          "nodeId": "root",
+          "outcome": "rejected",
+          "error": "provider_unavailable"
+        },
+        {
+          "revision": 3,
+          "generation": 1,
+          "nodeId": "root",
+          "outcome": "stopped",
+          "stoppingReason": "provider_unavailable"
+        }
+      ],
+      "run": {
+        "limits": {
+          "maxGenerations": 1,
+          "maxCostUsd": 0.03,
+          "concurrency": 1,
+          "maxRetries": 0,
+          "minDelayMs": 3000,
+          "maxOutputTokens": 1536,
+          "maxNodes": 3
+        },
+        "model": "openrouter/free",
+        "provider": null,
+        "maxGraphBytes": 1048576,
+        "routingPolicy": {
+          "allow_fallbacks": false,
+          "require_parameters": true,
+          "max_price": {
+            "prompt": 0,
+            "completion": 0
+          }
+        },
+        "usage": {
+          "generations": 1,
+          "promptTokens": 0,
+          "completionTokens": 0,
+          "totalTokens": 0,
+          "knownCostUsd": 0,
+          "costUsd": null,
+          "accountingComplete": false,
+          "reservedCostUsd": 0.03
+        },
+        "pricing": {
+          "status": "known_free",
+          "reason": "all_prices_zero",
+          "model": "openrouter/free",
+          "provider": null,
+          "source": "https://openrouter.ai/api/v1/models",
+          "checkedAt": "2026-09-14T21:00:11.644Z",
+          "modelPresent": true,
+          "promptPriceUsd": 0,
+          "completionPriceUsd": 0,
+          "allAdvertisedPricesZero": true,
+          "paidInference": false
+        },
+        "attempts": [
+          {
+            "generation": 1,
+            "nodeId": "root",
+            "model": "openrouter/free",
+            "provider": null,
+            "status": "rejected",
+            "requestedModel": "openrouter/free",
+            "actualModel": null,
+            "requestedProvider": null,
+            "actualProvider": null,
+            "routingPolicy": {
+              "allow_fallbacks": false,
+              "require_parameters": true,
+              "max_price": {
+                "prompt": 0,
+                "completion": 0
+              }
+            },
+            "startedAt": "2026-09-14T21:00:11.750Z",
+            "retry": 0,
+            "finishedAt": "2026-09-14T21:00:11.923Z",
+            "reportedCostUsd": null,
+            "usage": null,
+            "error": "provider_unavailable",
+            "httpStatus": 404
+          }
+        ],
+        "stoppingReason": "provider_unavailable"
+      }
+    }
+  }
+}

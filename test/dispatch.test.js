@@ -285,6 +285,30 @@ test('router endpoint unavailability stops without retry, fallback or assumed ze
   assert.equal(JSON.stringify(h.graph()).includes('Private endpoint details'), false);
 });
 
+test('workspace ZDR rejection after unpinning stops without retrying or overriding account guardrails', async () => {
+  const message = '0 endpoints out of 3 requested are available matching your guardrail restrictions and data policy. '
+    + 'ZDR violation (guardrail): 3 endpoints excluded';
+  const h = harness(() => response({ error: { code: 404, message } }, 404), { maxRetries: 0 }, routerOptions);
+  const outcome = await h.run();
+  assert.equal(outcome.stoppingReason, 'provider_unavailable');
+  assert.equal(h.calls(), 1);
+  assert.equal(h.graph().run.pricing.status, 'known_free');
+  assert.deepEqual(h.requests[0].provider, {
+    allow_fallbacks: false, require_parameters: true, max_price: { prompt: 0, completion: 0 },
+  });
+  const attempt = h.graph().run.attempts[0];
+  assert.deepEqual(attempt.routingPolicy, h.requests[0].provider);
+  assert.equal(attempt.actualModel, null);
+  assert.equal(attempt.actualProvider, null);
+  assert.equal(attempt.reportedCostUsd, null);
+  assert.equal(attempt.usage, null);
+  assert.equal(attempt.httpStatus, 404);
+  assert.equal(outcome.usage.costUsd, null);
+  assert.equal(outcome.usage.accountingComplete, false);
+  assert.equal(outcome.usage.reservedCostUsd, h.graph().run.limits.maxCostUsd);
+  assert.equal(JSON.stringify(h.graph()).includes(message), false);
+});
+
 test('nonzero reported router cost is preserved even when token accounting is malformed', async () => {
   const h = harness(context => response({ ...routedCompletion(context), usage: { cost: 0.01 } }), {}, routerOptions);
   const outcome = await h.run();
