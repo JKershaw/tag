@@ -45,6 +45,16 @@ function retryAfter(value) {
   return Number.isFinite(delay) && delay >= 0 && delay <= 60000 ? delay : null;
 }
 
+function price(value) {
+  if (typeof value === 'string') {
+    if (!/^\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(value)) return null;
+    // A positive decimal that underflows must never become a free tariff.
+    if (Number(value) === 0 && /[1-9]/.test(value.split(/[eE]/)[0])) return null;
+    value = Number(value);
+  }
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
 export function createProvider({ apiKey, model = allowedModels[0], provider = allowedProviders[0], fetchImpl = fetch } = {}) {
   if (!allowedModels.includes(model) || !allowedProviders.includes(provider)) throw new Error('Model/provider not allowlisted');
   let verified = false;
@@ -52,17 +62,42 @@ export function createProvider({ apiKey, model = allowedModels[0], provider = al
     model, name: provider,
     async verify() {
       verified = false;
-      const response = await fetchImpl(`${endpoint}/models`, { redirect: 'error', signal: AbortSignal.timeout(30000) });
-      if (!response.ok) throw new Error('Pricing unavailable');
-      const data = await json(response);
-      const pricing = data.data?.find(item => item.id === model)?.pricing;
-      if (!pricing || !Object.hasOwn(pricing, 'prompt') || !Object.hasOwn(pricing, 'completion')
-        || !Object.values(pricing).every(value => (typeof value === 'string' && /^0(?:\.0+)?$/.test(value)) || value === 0)) {
-        throw new Error('Only verified zero-priced models are permitted');
+      const record = {
+        status: 'unknown', reason: 'transport_error', model, provider,
+        source: `${endpoint}/models`, checkedAt: new Date().toISOString(),
+        modelPresent: null, promptPriceUsd: null, completionPriceUsd: null,
+        allAdvertisedPricesZero: null, paidInference: false,
+      };
+      let response;
+      try {
+        response = await fetchImpl(record.source, { redirect: 'error', signal: AbortSignal.timeout(30000) });
+      } catch { return record; }
+      if (!response.ok) {
+        await response.body?.cancel();
+        return { ...record, reason: 'http_error', httpStatus: response.status };
       }
-      verified = true;
-      return { model, provider, promptPriceUsd: 0, completionPriceUsd: 0,
-        allAdvertisedPricesZero: true, checkedAt: new Date().toISOString(), paidInference: false };
+      let data;
+      try { data = await json(response); } catch { return { ...record, reason: 'invalid_catalogue' }; }
+      if (!Array.isArray(data?.data) || data.data.some(item => !item || typeof item.id !== 'string')) {
+        return { ...record, reason: 'invalid_catalogue' };
+      }
+      const matches = data.data.filter(item => item.id === model);
+      record.modelPresent = matches.length > 0;
+      if (!matches.length) return { ...record, reason: 'model_unavailable' };
+      if (matches.length !== 1) return { ...record, reason: 'ambiguous_model' };
+      const pricing = matches[0].pricing;
+      if (pricing == null) return { ...record, reason: 'pricing_missing' };
+      if (typeof pricing !== 'object' || Array.isArray(pricing)
+        || !Object.hasOwn(pricing, 'prompt') || !Object.hasOwn(pricing, 'completion')) {
+        return { ...record, reason: 'pricing_invalid' };
+      }
+      const prices = Object.values(pricing).map(price);
+      if (prices.includes(null)) return { ...record, reason: 'pricing_invalid' };
+      verified = prices.every(value => value === 0);
+      return { ...record, status: verified ? 'known_free' : 'known_priced',
+        reason: verified ? 'all_prices_zero' : 'nonzero_price',
+        promptPriceUsd: price(pricing.prompt), completionPriceUsd: price(pricing.completion),
+        allAdvertisedPricesZero: verified };
     },
     async generate(context, maxOutputTokens) {
       if (!verified || !Number.isSafeInteger(maxOutputTokens) || maxOutputTokens < 128 || maxOutputTokens > 2048) {

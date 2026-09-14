@@ -141,6 +141,28 @@ advertised pricing component. Missing, malformed, unavailable, or nonzero
 prices stop the run. Requests also prohibit backend fallback and require zero
 maximum prompt/completion prices; returned model/provider identities are checked.
 
+Catalogue knowledge is recorded separately from permission to run and actual
+charges. `graph.run.pricing.status` is one of:
+
+| State | Meaning | Inference permitted |
+| --- | --- | --- |
+| `known_free` | Required prompt/completion prices and every advertised component are valid and zero. | Yes, within all existing limits. |
+| `known_priced` | All advertised prices are valid, including required prompt/completion, and at least one is positive. | No: paid inference remains unsupported. |
+| `unknown` | Discovery failed, the requested model is absent/ambiguous, pricing is missing/invalid, or verification has not run. | No: unknown is never treated as free or as a known paid tariff. |
+
+Verification accepts nonnegative finite numeric prices and decimal strings
+(including scientific notation); malformed values and positive strings that
+underflow to zero remain unknown. Every advertised component is checked, not
+just prompt/completion. The audit includes a sanitized `reason`, discovery
+source/time, and `modelPresent` (`null` when discovery cannot establish presence).
+Unknown prices and `allAdvertisedPricesZero` are `null`, not zero/false.
+The zero-budget `not_checked` record has only status and reason.
+Both disallowed states retain the existing `provider_preflight_failed` outcome;
+inspect `graph.run.pricing` to distinguish them. The low-level trusted provider's
+`verify()` must return an explicit pricing status; absent/unrecognized records
+fail closed. A previously verified adapter loses inference permission if a
+subsequent verification is priced or unknown.
+
 The local ledger reserves all remaining USD allowance **durably before I/O**,
 counts the attempt and marks its cost unknown before sending, and releases the reservation only on valid
 usage/cost accounting or an explicit HTTP 429 rejection. Missing/malformed
@@ -253,6 +275,35 @@ the host tests:
 node cli.js dispatch /absolute/path/to/tag/examples/mangodb/lifecycle-task.json \
   --store /absolute/path/to/new-lifecycle-run
 ```
+
+### Three-fixture replay after pricing classification (2026-09-14)
+
+All **74 tests passed**, including the original three real MangoDB host checks
+and pricing-state persistence regressions, before the replay. Exactly the same
+`lifecycle-task.json`, `query-task.json`, and `snapshot-task.json` were dispatched
+once each, sequentially, into fresh stores under
+`/tmp/tag-mangodb-replay-bF6lgd`. Fixture SHA-256 hashes matched before and after;
+objectives, observations, and limits were unchanged. The combined ceiling
+remained six inference attempts/$0.09 with zero retries and no paid fallback.
+Requested routing remained `meta-llama/llama-3.3-70b-instruct:free` via Chutes.
+
+| Fixture | Pricing status / reason | Outcome | Inference attempts / actual cost |
+| --- | --- | --- | --- |
+| Lifecycle | `unknown` / `model_unavailable` | `provider_preflight_failed` | 0 / $0.00 |
+| Query | `unknown` / `model_unavailable` | `provider_preflight_failed` | 0 / $0.00 |
+| Snapshot | `unknown` / `model_unavailable` | `provider_preflight_failed` | 0 / $0.00 |
+
+Each catalogue lookup completed, but the requested model was absent
+(`modelPresent: false`); this establishes **unknown pricing**, not a paid tariff
+or a free one. All three audits have null advertised prices, zero tokens, no
+reservations, and one graph node. Actual cost is zero because no inference was
+attempted, not because pricing was assumed free. No model produced an assessment,
+and live end-to-end completion remains unverified.
+
+Exact new CLI stdout and reopened MangoDB graph exports are preserved under
+`examples/mangodb/` as `<name>-replay-outcome.json` and
+`<name>-replay-graph.json`. The earlier outcomes, graphs, catalogue diagnostic,
+and self-development `state.json` remain unchanged.
 
 ## Graph rules and human boundaries
 

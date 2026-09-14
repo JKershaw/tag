@@ -1,0 +1,72 @@
+{
+  "protocolVersion": 1,
+  "revision": 1,
+  "generation": 0,
+  "nodes": [
+    {
+      "id": "root",
+      "objective": "Assess this real MangoDB query check. Compare the observed filtered, sorted, projected result with the expected result, cite the host test, and state the limited scope. Do not claim you ran tools.",
+      "parentId": null,
+      "type": "task",
+      "context": "Trusted-host observation from test/mangodb-tasks.test.js, query case, using @jkershaw/mangodb and an isolated temporary directory: inserted a={active:true,score:4}, b={active:true,score:9}, c={active:false,score:12}, d={active:true,score:7}. After close/reopen, find({active:true,score:{$gte:5}},{projection:{_id:1,score:1}}).sort({score:-1}).limit(2).toArray() returned exactly [{_id:'b',score:9},{_id:'d',score:7}]. Expected: b then d with only _id and score; inactive c and low-score a excluded. This verifies only the stated operator combination.",
+      "status": "failed",
+      "blockedBy": [],
+      "references": [],
+      "evidence": [],
+      "decisions": [],
+      "actions": [],
+      "result": "Execution stopped: provider_preflight_failed. No complete root synthesis is available.",
+      "reason": "provider_preflight_failed",
+      "attempts": 0
+    }
+  ],
+  "history": [
+    {
+      "revision": 1,
+      "generation": 0,
+      "nodeId": "root",
+      "outcome": "stopped",
+      "stoppingReason": "provider_preflight_failed"
+    }
+  ],
+  "run": {
+    "limits": {
+      "maxGenerations": 2,
+      "maxCostUsd": 0.03,
+      "concurrency": 1,
+      "maxRetries": 0,
+      "minDelayMs": 3000,
+      "maxOutputTokens": 1536,
+      "maxNodes": 3
+    },
+    "model": "meta-llama/llama-3.3-70b-instruct:free",
+    "provider": "Chutes",
+    "maxGraphBytes": 1048576,
+    "usage": {
+      "generations": 0,
+      "promptTokens": 0,
+      "completionTokens": 0,
+      "totalTokens": 0,
+      "knownCostUsd": 0,
+      "costUsd": 0,
+      "accountingComplete": true,
+      "reservedCostUsd": 0
+    },
+    "pricing": {
+      "status": "unknown",
+      "reason": "model_unavailable",
+      "model": "meta-llama/llama-3.3-70b-instruct:free",
+      "provider": "Chutes",
+      "source": "https://openrouter.ai/api/v1/models",
+      "checkedAt": "2026-09-14T20:32:42.282Z",
+      "modelPresent": false,
+      "promptPriceUsd": null,
+      "completionPriceUsd": null,
+      "allAdvertisedPricesZero": null,
+      "paidInference": false
+    },
+    "attempts": [],
+    "stoppingReason": "provider_preflight_failed",
+    "preflightError": "Only known-free pricing is permitted; see run.pricing"
+  }
+}
