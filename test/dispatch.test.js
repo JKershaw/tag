@@ -442,6 +442,22 @@ test('pricing transport failures stop before inference with complete zero-attemp
   assert.equal(JSON.stringify(h.graph()).includes('Private network details'), false);
 });
 
+test('an unavailable allowlisted model stops without selecting another catalogue model', async () => {
+  const h = harness();
+  let calls = 0;
+  h.options.provider = createProvider({ fetchImpl: async url => {
+    calls++;
+    assert.ok(url.endsWith('/models'));
+    return response({ data: [{ id: 'other/model:free', pricing: { prompt: '0', completion: '0' } }] });
+  } });
+  const outcome = await h.run();
+  assert.equal(outcome.stoppingReason, 'provider_preflight_failed');
+  assert.equal(outcome.usage.generations, 0);
+  assert.equal(outcome.usage.costUsd, 0);
+  assert.equal(calls, 1);
+  assert.equal(h.graph().run.model, model);
+});
+
 test('Retry-After HTTP dates respect spacing and reject excessive delays', async t => {
   const time = Date.parse('2026-09-14T12:00:00Z');
   t.mock.method(Date, 'now', () => time);
