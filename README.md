@@ -320,6 +320,62 @@ Exact new CLI stdout and reopened MangoDB graph exports are preserved under
 `<name>-replay-graph.json`. The earlier outcomes, graphs, catalogue diagnostic,
 and self-development `state.json` remain unchanged.
 
+### Catalogue-verified free-router replay (2026-09-14)
+
+At 20:46:27 UTC, the public
+[OpenRouter catalogue](https://openrouter.ai/api/v1/models) returned HTTP 200
+and exactly one `openrouter/free` entry with
+`pricing: { "prompt": "0", "completion": "0" }`, with no other pricing components.
+The ordinary allowlisted models were still absent. OpenRouter's
+[pricing schema](https://openrouter.ai/docs/guides/overview/models#pricing-object)
+defines `"0"` as free; its
+[free-router documentation](https://openrouter.ai/docs/guides/routing/routers/free-router)
+states that both router use and routed requests are free and that the response
+`model` identifies the actual selected model. This justifies allowing explicit
+selection of this route, **not** a pricing-validation exception. Each dispatch
+independently rechecked its live catalogue entry with the unchanged validator
+and persisted `known_free / all_prices_zero`. Missing or invalid router pricing
+still stops before inference. Catalogue tariff verification does not establish
+availability through the required Chutes backend.
+
+All **91 tests passed** (74 baseline plus 17 new router regression cases).
+New coverage includes explicit zero router pricing; unknown, malformed,
+nonzero, absent and ambiguous router entries; requested/actual attribution and
+MangoDB persistence; strict ordinary-model identity checks; provider identity
+and missing usage rejection; positive cost on a later completion, at the budget,
+and with malformed tokens; and HTTP 404 without fallback, retry or assumed cost.
+CodeQL reported zero alerts; a separate read-only code review found no
+significant issues (the automated review binary was unavailable).
+
+Exactly the same three fixtures were dispatched once each, sequentially, at
+20:50:26–20:50:33 UTC in fresh stores under
+`/tmp/tag-mangodb-free-router-eTVq8F`. Before/after SHA-256 checks matched; task
+inputs and limits were not edited. Each retained two maximum attempts, $0.03,
+concurrency one, zero retries, 3-second spacing, 1,536 output tokens and three
+maximum nodes. All requests selected `openrouter/free`, restricted to Chutes,
+with backend fallback disabled and maximum prompt/completion prices zero.
+
+| Fixture | Terminal status / reason | Requested route | Actual model | Attempts | Generations | Provider-reported cost | Graph nodes (compact JSON bytes) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Lifecycle | failed / `provider_unavailable` (HTTP 404) | `openrouter/free` | None returned | 1 | 1 | Unknown (`null`) | 1 (2,376) |
+| Query | failed / `provider_unavailable` (HTTP 404) | `openrouter/free` | None returned | 1 | 1 | Unknown (`null`) | 1 (2,382) |
+| Snapshot | failed / `provider_unavailable` (HTTP 404) | `openrouter/free` | None returned | 1 | 1 | Unknown (`null`) | 1 (2,449) |
+
+Each run retained its $0.03 reservation with `accountingComplete: false`.
+The zero known-cost/token counters are **not** provider reports of zero usage:
+no completion usage was returned. Combined actual cost remains unknown, with
+$0.09 reserved. HTTP 404 establishes request unavailability, not its underlying
+cause or a billable/unbillable determination; raw error bodies were not retained.
+No alternative provider, model, paid fallback, additional replay, or Harbour
+integration was attempted.
+
+Exact CLI outcomes and reopened graph/audit exports are preserved under
+`examples/mangodb/` as `<name>-free-router-outcome.json` and
+`<name>-free-router-graph.json`; earlier artifacts remain unchanged.
+**This is not the first verified live TAG model completion:** pricing preflight
+is now positively verified for this route, but none of the three requests
+returned a model completion.
+
 ## Graph rules and human boundaries
 
 - A ready node runs only when its prerequisites are **resolved** and all its

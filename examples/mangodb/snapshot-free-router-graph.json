@@ -1,0 +1,95 @@
+{
+  "protocolVersion": 1,
+  "revision": 3,
+  "generation": 1,
+  "nodes": [
+    {
+      "id": "root",
+      "objective": "Assess whether the observed TAG snapshot round trip preserves opaque tool input and audit history through real MangoDB. Cite the host test, distinguish persistence from tool execution, and avoid broader compatibility claims.",
+      "parentId": null,
+      "type": "task",
+      "context": "Trusted-host observation from test/mangodb-tasks.test.js, snapshot case: TAG saved a graph containing an unexecuted external tool proposal with values [{$oid:'external-id',label:'keep'},{$date:'not-a-date',extra:true}]. The MangoDB snapshot stored stateJSON as a string. After closing and reopening the store, the complete graph, proposal input, and history were deeply equal to the saved state; the action remained proposed and the root remained needs_human. Expected: preserve all JSON keys and audit history without executing the proposal. Only isolated temporary directories were used.",
+      "status": "failed",
+      "blockedBy": [],
+      "references": [],
+      "evidence": [],
+      "decisions": [],
+      "actions": [],
+      "result": "Execution stopped: provider_unavailable. No complete root synthesis is available.",
+      "reason": "provider_unavailable",
+      "attempts": 1
+    }
+  ],
+  "history": [
+    {
+      "revision": 2,
+      "generation": 1,
+      "nodeId": "root",
+      "outcome": "rejected",
+      "error": "provider_unavailable"
+    },
+    {
+      "revision": 3,
+      "generation": 1,
+      "nodeId": "root",
+      "outcome": "stopped",
+      "stoppingReason": "provider_unavailable"
+    }
+  ],
+  "run": {
+    "limits": {
+      "maxGenerations": 2,
+      "maxCostUsd": 0.03,
+      "concurrency": 1,
+      "maxRetries": 0,
+      "minDelayMs": 3000,
+      "maxOutputTokens": 1536,
+      "maxNodes": 3
+    },
+    "model": "openrouter/free",
+    "provider": "Chutes",
+    "maxGraphBytes": 1048576,
+    "usage": {
+      "generations": 1,
+      "promptTokens": 0,
+      "completionTokens": 0,
+      "totalTokens": 0,
+      "knownCostUsd": 0,
+      "costUsd": null,
+      "accountingComplete": false,
+      "reservedCostUsd": 0.03
+    },
+    "pricing": {
+      "status": "known_free",
+      "reason": "all_prices_zero",
+      "model": "openrouter/free",
+      "provider": "Chutes",
+      "source": "https://openrouter.ai/api/v1/models",
+      "checkedAt": "2026-09-14T20:50:33.137Z",
+      "modelPresent": true,
+      "promptPriceUsd": 0,
+      "completionPriceUsd": 0,
+      "allAdvertisedPricesZero": true,
+      "paidInference": false
+    },
+    "attempts": [
+      {
+        "generation": 1,
+        "nodeId": "root",
+        "model": "openrouter/free",
+        "provider": "Chutes",
+        "status": "rejected",
+        "requestedModel": "openrouter/free",
+        "actualModel": null,
+        "startedAt": "2026-09-14T20:50:33.228Z",
+        "retry": 0,
+        "finishedAt": "2026-09-14T20:50:33.367Z",
+        "reportedCostUsd": null,
+        "usage": null,
+        "error": "provider_unavailable",
+        "httpStatus": 404
+      }
+    ],
+    "stoppingReason": "provider_unavailable"
+  }
+}
