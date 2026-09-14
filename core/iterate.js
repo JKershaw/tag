@@ -11,6 +11,7 @@ export async function iterate({ store, agent, count = 1 }) {
     let updated;
     try {
       const proposal = await agent(buildContext(graph, node.id));
+      if (proposal?.nodeId !== node.id) throw new Error('Proposal must target the selected node');
       updated = applyProposal(graph, proposal);
     } catch (error) {
       const failed = structuredClone(graph);

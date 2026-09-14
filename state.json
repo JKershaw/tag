@@ -1,7 +1,7 @@
 {
   "protocolVersion": 1,
-  "revision": 4,
-  "generation": 3,
+  "revision": 7,
+  "generation": 6,
   "nodes": [
     {
       "id": "root",
@@ -22,13 +22,18 @@
           "text": "Context currently includes whole selected nodes and rejects projections exceeding 64000 characters. Status reports explicit blocked states but does not explain ready nodes waiting on dependencies or children. Tool proposals are recorded and require host action rather than executing model commands.",
           "source": "core/graph.js:96-128,192-198; cli.js:51-57; core/protocol.js:24",
           "generation": 1
+        },
+        {
+          "text": "Independent read-only review identified three correctness issues: MangoDB recursively interprets reserved $oid/$date keys in arbitrary tool-input JSON; npm executable symlinks do not pass the CLI entrypoint path comparison; iterate does not bind returned proposals to the selected node.",
+          "source": "Independent code-review worker; adapters/mango.js:42, cli.js:97, core/iterate.js:13-14",
+          "generation": 5
         }
       ],
       "decisions": [],
       "actions": [],
       "result": null,
       "reason": null,
-      "attempts": 1
+      "attempts": 2
     },
     {
       "id": "bounded-context",
@@ -108,17 +113,61 @@
       "parentId": "root",
       "type": "task",
       "context": "After authorization, run a bounded real experiment with one proposal per invocation and no prior worker conversations. Record actual revisions, outcomes, rejections, context sizes and unresolved information gaps as evidence. Have a fresh worker reconstruct established facts and next steps from the graph. Distinguish observations from hypotheses; never substitute mocked results for live evidence.",
-      "status": "ready",
+      "status": "resolved",
       "blockedBy": [
         "dogfood-configuration"
       ],
       "references": [],
-      "evidence": [],
+      "evidence": [
+        {
+          "text": "Direct observation: CLI context succeeded at revision 4, generation 3, selecting empirical-dogfood. I read bootstrap.md without accessing previous conversations, invocation history, state.json, Mango snapshots or agent files. No files were changed and no tests, builds or linters were run. Context size was not measured; 32000 is the reported projection budget, not its measured size.",
+          "source": "Fresh-worker execution of node /home/runner/work/tag/tag/cli.js context --store /home/runner/work/tag/tag/.tag and reading bootstrap.md",
+          "generation": 4
+        },
+        {
+          "text": "Reconstructed progress: dogfood-configuration records existing authorization for this external-host arrangement, up to 30 generations, without additional paid APIs. Its resolved status satisfies this node's prerequisite. bounded-context records deterministic bounded projections and 11 passing host tests at generation 2; frontier-explanations records waiting diagnostics and 13 passing host tests at generation 3. These implementation and test outcomes are persisted reports, not independently rerun verification. Root context explicitly omits 27751 characters; no related nodes are omitted.",
+          "source": "Revision 4 CLI projection: dogfood-configuration, bounded-context, frontier-explanations and root",
+          "generation": 4
+        },
+        {
+          "text": "This single fresh worker reconstructed established progress, authorization, limitations and the next step from persisted graph projections. After host acceptance, the visible graph supports explicit root synthesis because its displayed child tasks would all be resolved. This does not establish comparative performance, repeated-worker reliability, independent correctness of implementation, or facts in omitted transcript material. Earlier rejection counts, costs and context sizes are unavailable here. This proposal's acceptance and resulting revision remain unobserved.",
+          "source": "Fresh-worker assessment of revision 4 CLI projection and bootstrap iteration rules",
+          "generation": 4
+        }
+      ],
       "decisions": [],
       "actions": [],
-      "result": null,
+      "result": "The bounded fresh-worker reconstruction supplied the requested continuity evidence: progress and next steps were recoverable without prior worker conversations. Comparative performance claims remain unproven. Host application and subsequent root synthesis are separate steps.",
       "reason": null,
-      "attempts": 0
+      "attempts": 1
+    },
+    {
+      "id": "review-hardening",
+      "objective": "Fix the three reviewed runtime boundary bugs with regression coverage.",
+      "parentId": "root",
+      "type": "task",
+      "context": "Encode the graph snapshot opaquely so MangoDB cannot reinterpret user JSON. Preserve reopen/revision behavior. Make the npm symlink executable actually invoke the CLI. Bind automated proposal nodeId to the node whose projection was supplied. Reproduce each issue with the existing node:test runner and keep changes minimal. These fixes enforce the existing protocol rather than changing mutation rules.",
+      "status": "resolved",
+      "blockedBy": [],
+      "references": [],
+      "evidence": [
+        {
+          "text": "Three added regression tests initially failed exactly as reviewed: arbitrary $oid input broke MangoDB reload, an agent could resolve a sibling instead of the selected node, and the npm-style symlink produced no CLI output. After fixes, npm test passed all 16 tests. git diff --check passed.",
+          "source": "Host npm test before and after generation 6 fixes; test/tag.test.js",
+          "generation": 6
+        }
+      ],
+      "decisions": [
+        {
+          "text": "Persist the graph and audit together as opaque JSON within one MangoDB document, while reading initial bootstrap snapshots for migration. Run the dedicated CLI entrypoint unconditionally so npm symlinks work. Reject automated responses targeting any node other than the supplied context node.",
+          "source": "adapters/mango.js; cli.js; core/iterate.js",
+          "generation": 6
+        }
+      ],
+      "actions": [],
+      "result": "All three reproducible review findings fixed with regression tests, preserving existing mutation semantics.",
+      "reason": null,
+      "attempts": 1
     }
   ],
   "history": [
@@ -249,6 +298,101 @@
             "op": "resolve",
             "id": "frontier-explanations",
             "result": "Waiting frontier is inspectable from durable graph state, with unchanged dependency scheduling and explicit parent synthesis."
+          }
+        ]
+      }
+    },
+    {
+      "generation": 4,
+      "revision": 5,
+      "nodeId": "empirical-dogfood",
+      "outcome": "applied",
+      "proposal": {
+        "protocolVersion": 1,
+        "revision": 4,
+        "nodeId": "empirical-dogfood",
+        "summary": "Completed one fresh-worker reconstruction using only CLI graph context and bootstrap.md.",
+        "mutations": [
+          {
+            "op": "evidence",
+            "id": "empirical-dogfood",
+            "text": "Direct observation: CLI context succeeded at revision 4, generation 3, selecting empirical-dogfood. I read bootstrap.md without accessing previous conversations, invocation history, state.json, Mango snapshots or agent files. No files were changed and no tests, builds or linters were run. Context size was not measured; 32000 is the reported projection budget, not its measured size.",
+            "source": "Fresh-worker execution of node /home/runner/work/tag/tag/cli.js context --store /home/runner/work/tag/tag/.tag and reading bootstrap.md"
+          },
+          {
+            "op": "evidence",
+            "id": "empirical-dogfood",
+            "text": "Reconstructed progress: dogfood-configuration records existing authorization for this external-host arrangement, up to 30 generations, without additional paid APIs. Its resolved status satisfies this node's prerequisite. bounded-context records deterministic bounded projections and 11 passing host tests at generation 2; frontier-explanations records waiting diagnostics and 13 passing host tests at generation 3. These implementation and test outcomes are persisted reports, not independently rerun verification. Root context explicitly omits 27751 characters; no related nodes are omitted.",
+            "source": "Revision 4 CLI projection: dogfood-configuration, bounded-context, frontier-explanations and root"
+          },
+          {
+            "op": "evidence",
+            "id": "empirical-dogfood",
+            "text": "This single fresh worker reconstructed established progress, authorization, limitations and the next step from persisted graph projections. After host acceptance, the visible graph supports explicit root synthesis because its displayed child tasks would all be resolved. This does not establish comparative performance, repeated-worker reliability, independent correctness of implementation, or facts in omitted transcript material. Earlier rejection counts, costs and context sizes are unavailable here. This proposal's acceptance and resulting revision remain unobserved.",
+            "source": "Fresh-worker assessment of revision 4 CLI projection and bootstrap iteration rules"
+          },
+          {
+            "op": "resolve",
+            "id": "empirical-dogfood",
+            "result": "The bounded fresh-worker reconstruction supplied the requested continuity evidence: progress and next steps were recoverable without prior worker conversations. Comparative performance claims remain unproven. Host application and subsequent root synthesis are separate steps."
+          }
+        ]
+      }
+    },
+    {
+      "generation": 5,
+      "revision": 6,
+      "nodeId": "root",
+      "outcome": "applied",
+      "proposal": {
+        "protocolVersion": 1,
+        "revision": 5,
+        "nodeId": "root",
+        "summary": "Turn independent review findings into a bounded hardening task before root synthesis.",
+        "mutations": [
+          {
+            "op": "evidence",
+            "id": "root",
+            "text": "Independent read-only review identified three correctness issues: MangoDB recursively interprets reserved $oid/$date keys in arbitrary tool-input JSON; npm executable symlinks do not pass the CLI entrypoint path comparison; iterate does not bind returned proposals to the selected node.",
+            "source": "Independent code-review worker; adapters/mango.js:42, cli.js:97, core/iterate.js:13-14"
+          },
+          {
+            "op": "add",
+            "id": "review-hardening",
+            "parentId": "root",
+            "objective": "Fix the three reviewed runtime boundary bugs with regression coverage.",
+            "context": "Encode the graph snapshot opaquely so MangoDB cannot reinterpret user JSON. Preserve reopen/revision behavior. Make the npm symlink executable actually invoke the CLI. Bind automated proposal nodeId to the node whose projection was supplied. Reproduce each issue with the existing node:test runner and keep changes minimal. These fixes enforce the existing protocol rather than changing mutation rules."
+          }
+        ]
+      }
+    },
+    {
+      "generation": 6,
+      "revision": 7,
+      "nodeId": "review-hardening",
+      "outcome": "applied",
+      "proposal": {
+        "protocolVersion": 1,
+        "revision": 6,
+        "nodeId": "review-hardening",
+        "summary": "Reproduce and fix all three independently reviewed runtime boundary issues.",
+        "mutations": [
+          {
+            "op": "evidence",
+            "id": "review-hardening",
+            "text": "Three added regression tests initially failed exactly as reviewed: arbitrary $oid input broke MangoDB reload, an agent could resolve a sibling instead of the selected node, and the npm-style symlink produced no CLI output. After fixes, npm test passed all 16 tests. git diff --check passed.",
+            "source": "Host npm test before and after generation 6 fixes; test/tag.test.js"
+          },
+          {
+            "op": "decision",
+            "id": "review-hardening",
+            "text": "Persist the graph and audit together as opaque JSON within one MangoDB document, while reading initial bootstrap snapshots for migration. Run the dedicated CLI entrypoint unconditionally so npm symlinks work. Reject automated responses targeting any node other than the supplied context node.",
+            "source": "adapters/mango.js; cli.js; core/iterate.js"
+          },
+          {
+            "op": "resolve",
+            "id": "review-hardening",
+            "result": "All three reproducible review findings fixed with regression tests, preserving existing mutation semantics."
           }
         ]
       }

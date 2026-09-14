@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, symlink } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
@@ -160,6 +160,27 @@ test('real MangoDB survives close/reopen, locks stores and checks revisions', as
   }
 });
 
+test('MangoDB preserves arbitrary JSON keys in tool proposals', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'tag-json-'));
+  let store;
+  try {
+    store = await openStore(directory);
+    const graph = seed('Preserve JSON');
+    await store.save(graph);
+    const updated = applyProposal(graph, proposal(graph, [{
+      op: 'propose', id: 'root', tool: 'external', reason: 'Host approval',
+      input: { values: [{ $oid: 'external-id', label: 'keep' }, { $date: 'not-a-date', extra: true }] },
+    }]));
+    await store.save(updated, 0);
+    await store.close();
+    store = await openStore(directory);
+    assert.deepEqual(await store.load(), updated);
+  } finally {
+    await store?.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('iterate obeys its budget, stops on exhaustion and journals rejected calls', async () => {
   let state = seed('Build');
   const store = { load: async () => structuredClone(state), save: async value => { state = value; } };
@@ -179,6 +200,20 @@ test('iterate obeys its budget, stops on exhaustion and journals rejected calls'
   assert.equal(state.history.at(-1).outcome, 'rejected');
   await iterate({ store, agent: async () => proposal(state, [resolve('root')]), count: 1 });
   assert.equal((await iterate({ store, agent, count: 30 })).stop, 'no_runnable_nodes');
+});
+
+test('iterate rejects proposals targeting a different runnable node', async () => {
+  let state = applyProposal(seed('Build'), proposal(seed('Build'), [add('a'), add('b')]));
+  const store = { load: async () => structuredClone(state), save: async value => { state = value; } };
+  const result = await iterate({
+    store, agent: async context => {
+      assert.equal(context.nodeId, 'a');
+      return proposal(state, [resolve('b')], 'b');
+    },
+  });
+  assert.equal(result.stop, 'agent_error');
+  assert.equal(state.nodes.find(node => node.id === 'b').status, 'ready');
+  assert.equal(state.history.at(-1).nodeId, 'a');
 });
 
 test('OpenAI-compatible adapter sends fresh graph context and hides HTTP error bodies', async () => {
@@ -223,6 +258,18 @@ test('CLI resumes an exported graph and explains the persisted frontier', async 
     assert.deepEqual(await run('graph'), graph);
     await assert.rejects(run('init'), /already initialized/);
     await assert.rejects(run('explain', 'missing'), /Unknown node/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('npm-style executable symlinks invoke the CLI', { skip: process.platform === 'win32' }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'tag-bin-'));
+  try {
+    const link = join(directory, 'tag');
+    await symlink(fileURLToPath(new URL('../cli.js', import.meta.url)), link);
+    const { stdout } = await promisify(execFile)(process.execPath, [link, '--help']);
+    assert.match(stdout, /Tiny Agent Node Graph/);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

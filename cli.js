@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { seed, validateGraph, nextNode, runnable, explain, buildContext, applyProposal, humanUpdate } from './core/graph.js';
 import { iterate } from './core/iterate.js';
@@ -94,9 +93,7 @@ async function main() {
   }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main().catch(error => {
-    console.error(`TAG: ${error.message}`);
-    process.exitCode = 1;
-  });
-}
+main().catch(error => {
+  console.error(`TAG: ${error.message}`);
+  process.exitCode = 1;
+});

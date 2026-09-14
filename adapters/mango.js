@@ -24,22 +24,23 @@ export async function openStore(directory) {
     throw error;
   }
   const snapshots = client.db('tag').collection('snapshots');
+  const decode = document => validateGraph(typeof document.stateJSON === 'string' ? JSON.parse(document.stateJSON) : document.state);
   let closed = false;
   const checkOpen = () => { if (closed) throw new Error('Store is closed'); };
   return {
     async load() {
       checkOpen();
       const document = await snapshots.findOne({ _id: 'graph' });
-      return document ? validateGraph(document.state) : null;
+      return document ? decode(document) : null;
     },
     async save(state, expectedRevision = null) {
       checkOpen();
       validateGraph(state);
       const existing = await snapshots.findOne({ _id: 'graph' });
-      if ((existing?.state.revision ?? null) !== expectedRevision) throw new Error('Stale store revision');
+      if ((existing ? decode(existing).revision : null) !== expectedRevision) throw new Error('Stale store revision');
       if (existing && state.revision !== expectedRevision + 1) throw new Error('Revision must increase by one');
-      // One document commits graph mutations and their audit record together.
-      await snapshots.replaceOne({ _id: 'graph' }, { _id: 'graph', state }, { upsert: true });
+      // Opaque JSON avoids MangoDB interpreting user-supplied $oid/$date objects.
+      await snapshots.replaceOne({ _id: 'graph' }, { _id: 'graph', stateJSON: JSON.stringify(state) }, { upsert: true });
     },
     async close() {
       if (closed) return;
