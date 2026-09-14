@@ -133,7 +133,8 @@ Each HTTP response is capped at 2 MiB and each request times out after 30 second
 
 **Paid inference is intentionally unsupported.** The fixed HTTPS OpenRouter
 endpoint accepts only `meta-llama/llama-3.3-70b-instruct:free` (default),
-`qwen/qwen3-4b:free`, or `openrouter/free`, and only the `Chutes` backend.
+`qwen/qwen3-4b:free`, or `openrouter/free`. Ordinary models remain restricted to
+the `Chutes` backend; the free router has no default provider pin.
 `TAG_MODEL` can explicitly select an allowlisted model or route; there is no automatic model switch, fallback, or
 paid escalation. Free model availability is not guaranteed. Before any model
 call, TAG locally verifies the model catalogue has zero prices for every
@@ -143,12 +144,15 @@ maximum prompt/completion prices; returned model/provider identities are checked
 
 `openrouter/free` is the sole router exception to exact returned-model matching:
 OpenRouter selects the actual model, whose nonempty bounded model ID must be
-returned along with the allowed provider. The route itself must pass the same
+returned; the actual provider is recorded when supplied, otherwise left unknown.
+An explicitly supplied Chutes pin is still enforced. The route itself must pass the same
 catalogue validator as ordinary models: its name or documentation alone never
 authorizes inference. The live catalogue must contain exactly one matching entry,
 explicit valid prompt/completion zeros, and no nonzero or invalid advertised
 components. No individual routed-model tariff is hardcoded or inferred.
-The provider restrictions remain intact even if no compatible endpoint exists.
+Only this router may omit `provider.only`; ordinary model/provider allowlists
+remain unchanged. `allow_fallbacks: false`, `require_parameters: true`, and zero
+maximum prompt/completion prices still apply. No ZDR requirement is added.
 
 Catalogue knowledge is recorded separately from permission to run and actual
 charges. `graph.run.pricing.status` is one of:
@@ -191,8 +195,9 @@ malformed responses/proposals, and output truncation stop. Error bodies and
 credentials are not written to audit. `graph.run` records requested/returned
 model/provider, pricing verification, limits, per-attempt tokens/cost/errors,
 timestamps, reservations, and final stopping reason.
-Each attempt retains `requestedModel` separately from `actualModel` (null when
-no response model is available) and `reportedCostUsd` separately from validated
+The run and each attempt persist the exact `routingPolicy` sent to OpenRouter.
+Each attempt retains `requestedModel`/`requestedProvider` separately from
+`actualModel`/`actualProvider` (null when not reported), and `reportedCostUsd` separately from validated
 usage. HTTP 404 is recorded as `provider_unavailable`, without retry or an
 assumption of zero cost.
 
