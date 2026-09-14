@@ -132,14 +132,23 @@ at 32,000 serialized characters; graph growth is additionally checked against a
 Each HTTP response is capped at 2 MiB and each request times out after 30 seconds.
 
 **Paid inference is intentionally unsupported.** The fixed HTTPS OpenRouter
-endpoint accepts only `meta-llama/llama-3.3-70b-instruct:free` (default) or
-`qwen/qwen3-4b:free`, and only the `Chutes` backend. `TAG_MODEL` can select the
-other allowlisted free model; there is no automatic model switch, fallback, or
+endpoint accepts only `meta-llama/llama-3.3-70b-instruct:free` (default),
+`qwen/qwen3-4b:free`, or `openrouter/free`, and only the `Chutes` backend.
+`TAG_MODEL` can explicitly select an allowlisted model or route; there is no automatic model switch, fallback, or
 paid escalation. Free model availability is not guaranteed. Before any model
 call, TAG locally verifies the model catalogue has zero prices for every
 advertised pricing component. Missing, malformed, unavailable, or nonzero
 prices stop the run. Requests also prohibit backend fallback and require zero
 maximum prompt/completion prices; returned model/provider identities are checked.
+
+`openrouter/free` is the sole router exception to exact returned-model matching:
+OpenRouter selects the actual model, whose nonempty bounded model ID must be
+returned along with the allowed provider. The route itself must pass the same
+catalogue validator as ordinary models: its name or documentation alone never
+authorizes inference. The live catalogue must contain exactly one matching entry,
+explicit valid prompt/completion zeros, and no nonzero or invalid advertised
+components. No individual routed-model tariff is hardcoded or inferred.
+The provider restrictions remain intact even if no compatible endpoint exists.
 
 Catalogue knowledge is recorded separately from permission to run and actual
 charges. `graph.run.pricing.status` is one of:
@@ -168,7 +177,9 @@ counts the attempt and marks its cost unknown before sending, and releases the r
 usage/cost accounting or an explicit HTTP 429 rejection. Missing/malformed
 accounting or uncertain transport/server failures retain the reservation and
 stop immediately without retries. Reported costs are accumulated; any nonzero
-charge violates the free-only tariff and stops, even below the budget.
+charge violates the free-only tariff and stops as `pricing_violation`, including
+at or above the budget. A positive reported cost is preserved even if token
+accounting is malformed; total accounting then remains incomplete, not zero.
 Budget exhaustion stops before another request. As with any remote billing
 API, a provider charging contrary to its advertised zero tariff cannot be
 prevented locally; it is reported, never treated as permission to spend more.
@@ -180,6 +191,10 @@ malformed responses/proposals, and output truncation stop. Error bodies and
 credentials are not written to audit. `graph.run` records requested/returned
 model/provider, pricing verification, limits, per-attempt tokens/cost/errors,
 timestamps, reservations, and final stopping reason.
+Each attempt retains `requestedModel` separately from `actualModel` (null when
+no response model is available) and `reportedCostUsd` separately from validated
+usage. HTTP 404 is recorded as `provider_unavailable`, without retry or an
+assumption of zero cost.
 
 No model output is executed as shell commands or file writes. Validated graph
 mutations are the only automatic effects; tool proposals require human review.

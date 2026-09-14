@@ -1,5 +1,6 @@
 const endpoint = 'https://openrouter.ai/api/v1';
-export const allowedModels = Object.freeze(['meta-llama/llama-3.3-70b-instruct:free', 'qwen/qwen3-4b:free']);
+const freeRouter = 'openrouter/free';
+export const allowedModels = Object.freeze(['meta-llama/llama-3.3-70b-instruct:free', 'qwen/qwen3-4b:free', freeRouter]);
 export const allowedProviders = Object.freeze(['Chutes']);
 const instructions = `Operate the supplied problem graph, one bounded action per request.
 Return only one JSON proposal matching the supplied protocol.
@@ -123,7 +124,8 @@ export function createProvider({ apiKey, model = allowedModels[0], provider = al
         await response.body?.cancel();
         // Only explicit request rejection can be retried; ambiguous server/transport failures stop.
         return {
-          error: response.status === 429 ? 'rate_limited' : 'provider_http_error',
+          error: response.status === 429 ? 'rate_limited'
+            : response.status === 404 ? 'provider_unavailable' : 'provider_http_error',
           httpStatus: response.status, unbilled: response.status === 429,
           retryAfterMs: retryAfter(response.headers.get('retry-after')),
         };
@@ -132,10 +134,20 @@ export function createProvider({ apiKey, model = allowedModels[0], provider = al
       try { data = await json(response); } catch { return { error: 'malformed_response', uncertain: true }; }
       if (!data || typeof data !== 'object' || Array.isArray(data)) return { error: 'malformed_response', uncertain: true };
       const usage = usageRecord(data.usage);
-      const identity = value => typeof value === 'string' ? value.slice(0, 128) : '(missing or invalid)';
-      const result = { usage, model: identity(data.model), provider: identity(data.provider) };
+      const identity = value => typeof value === 'string' && value.trim() ? value.slice(0, 128) : null;
+      const reportedCostUsd = typeof data.usage?.cost === 'number' && Number.isFinite(data.usage.cost)
+        && data.usage.cost >= 0 ? data.usage.cost : null;
+      const result = { usage, reportedCostUsd, model: identity(data.model), provider: identity(data.provider) };
+      if (reportedCostUsd > 0) {
+        verified = false;
+        return { ...result, error: 'pricing_violation' };
+      }
       if (!usage) return { ...result, error: 'usage_unavailable' };
-      if (![model, model.replace(/:free$/, '')].includes(data.model) || data.provider !== provider) {
+      const modelMatches = model === freeRouter
+        ? typeof data.model === 'string' && data.model !== freeRouter
+          && /^[a-zA-Z0-9][a-zA-Z0-9._-]*\/[a-zA-Z0-9._:/-]+$/.test(data.model) && data.model.length <= 128
+        : [model, model.replace(/:free$/, '')].includes(data.model);
+      if (!modelMatches || data.provider !== provider) {
         return { ...result, error: 'provider_identity_mismatch' };
       }
       if (usage.completionTokens > maxOutputTokens) return { ...result, error: 'output_limit' };

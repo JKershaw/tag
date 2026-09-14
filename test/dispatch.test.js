@@ -22,7 +22,7 @@ const completion = (context, mutations) => ({
 });
 const catalog = { data: [{ id: model, pricing: { prompt: '0', completion: '0', request: '0' } }] };
 
-function harness(handler = context => response(completion(context)), limits = {}) {
+function harness(handler = context => response(completion(context)), limits = {}, { requestedModel = model, catalogue = catalog } = {}) {
   let graph = null;
   let calls = 0;
   let clock = 0;
@@ -36,10 +36,10 @@ function harness(handler = context => response(completion(context)), limits = {}
       graph = structuredClone(value);
     },
   };
-  const agent = createProvider({ fetchImpl: async (url, options) => {
+  const agent = createProvider({ model: requestedModel, fetchImpl: async (url, options) => {
     assert.equal(options.redirect, 'error');
     assert.ok(options.signal);
-    if (url.endsWith('/models')) return response(catalog);
+    if (url.endsWith('/models')) return response(catalogue);
     calls++;
     const request = JSON.parse(options.body);
     requests.push(request);
@@ -98,17 +98,158 @@ test('generation exhaustion counts every request and rate limits successful call
 });
 
 test('unexpected spend is accounted and stops, even below the budget', async () => {
-  for (const [cost, reason] of [[0.01, 'pricing_violation'], [0.10, 'budget_exhausted']]) {
+  for (const cost of [0.01, 0.10]) {
     const h = harness(context => {
       const data = completion(context);
       data.usage.cost = cost;
       return response(data);
     });
     const outcome = await h.run();
-    assert.equal(outcome.stoppingReason, reason);
+    assert.equal(outcome.stoppingReason, 'pricing_violation');
     assert.equal(outcome.usage.costUsd, cost);
     assert.equal(h.calls(), 1);
     assert.equal(h.graph().history[0].outcome, 'rejected');
+  }
+});
+
+const router = 'openrouter/free';
+const routerCatalogue = { data: [{ id: router, pricing: { prompt: '0', completion: '0' } }] };
+const routerOptions = { requestedModel: router, catalogue: routerCatalogue };
+const routedCompletion = context => ({ ...completion(context), model: 'routed/actual-model' });
+
+test('free router requires explicit catalogue zeros and preserves routing restrictions and attribution', async () => {
+  const h = harness(context => response(routedCompletion(context)), {}, routerOptions);
+  const outcome = await h.run();
+  assert.equal(outcome.status, 'resolved');
+  assert.equal(outcome.usage.costUsd, 0);
+  assert.equal(outcome.usage.accountingComplete, true);
+  assert.equal(h.graph().run.pricing.status, 'known_free');
+  assert.equal(h.graph().run.pricing.reason, 'all_prices_zero');
+  assert.equal(h.graph().run.model, router);
+  const attempt = h.graph().run.attempts[0];
+  assert.equal(attempt.requestedModel, router);
+  assert.equal(attempt.actualModel, 'routed/actual-model');
+  assert.equal(attempt.model, 'routed/actual-model');
+  assert.equal(attempt.provider, provider);
+  assert.equal(h.requests[0].model, router);
+  assert.deepEqual(h.requests[0].provider, {
+    only: [provider], allow_fallbacks: false, require_parameters: true, max_price: { prompt: 0, completion: 0 },
+  });
+  assert.deepEqual(h.requests[0].usage, { include: true });
+});
+
+test('router name never substitutes for unknown or nonzero pricing', async t => {
+  for (const [name, pricing, status] of [
+    ['missing', undefined, 'unknown'], ['null', null, 'unknown'], ['empty', {}, 'unknown'],
+    ['incomplete', { prompt: '0' }, 'unknown'],
+    ['malformed', { prompt: '0', completion: '' }, 'unknown'],
+    ['underflow', { prompt: '0', completion: '1e-999' }, 'unknown'],
+    ['unknown extra', { prompt: '0', completion: '0', request: null }, 'unknown'],
+    ['priced', { prompt: '0', completion: '0.01' }, 'known_priced'],
+    ['priced extra', { prompt: '0', completion: '0', request: '0.01' }, 'known_priced'],
+  ]) await t.test(name, async () => {
+    const h = harness(undefined, {}, { requestedModel: router, catalogue: { data: [{ id: router, pricing }] } });
+    assert.equal((await h.run()).stoppingReason, 'provider_preflight_failed');
+    assert.equal(h.graph().run.pricing.status, status);
+    assert.equal(h.calls(), 0);
+    await assert.rejects(h.options.provider.generate({}, 128), /Unverified/);
+  });
+});
+
+test('router absence or ambiguity cannot select an ordinary free model instead', async () => {
+  for (const catalogue of [catalog, { data: [routerCatalogue.data[0], routerCatalogue.data[0]] }]) {
+    const h = harness(undefined, {}, { requestedModel: router, catalogue });
+    assert.equal((await h.run()).stoppingReason, 'provider_preflight_failed');
+    assert.equal(h.graph().run.pricing.status, 'unknown');
+    assert.equal(h.graph().run.pricing.reason, catalogue === catalog ? 'model_unavailable' : 'ambiguous_model');
+    assert.equal(h.calls(), 0);
+  }
+});
+
+test('router still requires actual-model attribution, the allowed provider and valid usage on every completion', async () => {
+  for (const [override, reason] of [
+    [{ model: undefined }, 'provider_identity_mismatch'],
+    [{ model: router }, 'provider_identity_mismatch'],
+    [{ model: '' }, 'provider_identity_mismatch'],
+    [{ model: 'x/y'.repeat(100) }, 'provider_identity_mismatch'],
+    [{ provider: 'Other' }, 'provider_identity_mismatch'],
+    [{ usage: undefined }, 'usage_unavailable'],
+    [{ usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 } }, 'usage_unavailable'],
+  ]) {
+    const h = harness(context => response({ ...routedCompletion(context), ...override }), {}, routerOptions);
+    assert.equal((await h.run()).stoppingReason, reason);
+    assert.equal(h.calls(), 1);
+    assert.equal(h.graph().run.attempts[0].requestedModel, router);
+  }
+  const ordinary = harness(context => response(routedCompletion(context)));
+  assert.equal((await ordinary.run()).stoppingReason, 'provider_identity_mismatch');
+});
+
+test('nonzero router cost on a later completion stops before applying it or making another request', async () => {
+  for (const cost of [0.01, 0.10]) {
+    const h = harness((context, call) => {
+      const data = { ...completion(context, [{ op: 'evidence', id: 'root', text: 'Continue', source: 'test' }]),
+        model: 'routed/actual-model' };
+      data.usage.cost = call === 1 ? 0 : cost;
+      return response(data);
+    }, {}, routerOptions);
+    const outcome = await h.run();
+    assert.equal(outcome.stoppingReason, 'pricing_violation');
+    assert.equal(outcome.usage.costUsd, cost);
+    assert.equal(outcome.usage.accountingComplete, true);
+    assert.equal(h.calls(), 2);
+    assert.equal(h.graph().nodes[0].evidence.length, 1);
+    assert.equal(h.graph().run.pricing.status, 'known_free');
+    assert.equal(h.graph().run.attempts[1].usage.costUsd, cost);
+    assert.equal(h.graph().run.attempts[1].error, 'pricing_violation');
+    await assert.rejects(h.options.provider.generate({}, 128), /Unverified/);
+  }
+});
+
+test('router endpoint unavailability stops without retry, fallback or assumed zero actual cost', async () => {
+  const h = harness(() => response({ error: 'Private endpoint details' }, 404), {}, routerOptions);
+  const outcome = await h.run();
+  assert.equal(outcome.stoppingReason, 'provider_unavailable');
+  assert.equal(outcome.usage.costUsd, null);
+  assert.equal(outcome.usage.accountingComplete, false);
+  assert.equal(h.calls(), 1);
+  assert.equal(h.graph().run.attempts[0].actualModel, null);
+  assert.equal(h.graph().run.attempts[0].requestedModel, router);
+  assert.equal(h.graph().run.attempts[0].httpStatus, 404);
+  assert.equal(JSON.stringify(h.graph()).includes('Private endpoint details'), false);
+});
+
+test('nonzero reported router cost is preserved even when token accounting is malformed', async () => {
+  const h = harness(context => response({ ...routedCompletion(context), usage: { cost: 0.01 } }), {}, routerOptions);
+  const outcome = await h.run();
+  assert.equal(outcome.stoppingReason, 'pricing_violation');
+  assert.equal(outcome.usage.accountingComplete, false);
+  assert.equal(outcome.usage.costUsd, null);
+  assert.equal(h.graph().run.attempts[0].reportedCostUsd, 0.01);
+  assert.equal(h.graph().run.attempts[0].usage, null);
+  assert.equal(h.calls(), 1);
+  await assert.rejects(h.options.provider.generate({}, 128), /Unverified/);
+});
+
+test('router requested and returned models survive MangoDB reopening', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'tag-router-attribution-'));
+  let store;
+  try {
+    store = await openStore(directory);
+    const agent = createProvider({ model: router, fetchImpl: async (url, options) => url.endsWith('/models')
+      ? response(routerCatalogue)
+      : response(routedCompletion(JSON.parse(JSON.parse(options.body).messages[1].content))) });
+    await dispatchRun({ objective: 'Persist routed attribution' }, { store, provider: agent });
+    const before = await store.load();
+    await store.close();
+    store = await openStore(directory);
+    const after = await store.load();
+    assert.deepEqual(after, before);
+    assert.equal(after.run.attempts[0].requestedModel, router);
+    assert.equal(after.run.attempts[0].actualModel, 'routed/actual-model');
+  } finally {
+    await store?.close();
+    await rm(directory, { recursive: true, force: true });
   }
 });
 
