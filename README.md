@@ -63,27 +63,105 @@ nothing. Node IDs are short alphanumeric identifiers with `.`, `_`, or `-`.
 New nodes must descend from the current node; other mutations can touch only
 that node and nodes created in the same transition.
 
-## Model-driven iterations
+## Harbour-style bounded dispatch
 
-Set `TAG_ENDPOINT` to an **explicitly trusted full chat-completions URL** and
-`TAG_MODEL` to the provider's model name. Supply `TAG_API_KEY` through your
-environment if required; never put credentials in graph state. Then:
+Harbour owns task selection, context, and limits. TAG owns decomposition,
+dependencies, information gaps, scheduling, and explicit parent synthesis.
+There is no service and the caller does not need the internal graph.
 
 ```sh
-node cli.js iterate --count 10
-node cli.js history
-node cli.js inspect root
+export OPENROUTER_API_KEY=... # supply through the environment, never a task file
+node cli.js dispatch /absolute/path/task.json --store /absolute/path/new-run
+node cli.js graph --store /absolute/path/new-run
+node cli.js history --store /absolute/path/new-run
 ```
 
-Each invocation sends only the current graph projection and bootstrap
-instructions. Configuring an endpoint authorizes sending the projected graph
-(including seed material and evidence) there. HTTPS is required except on
-localhost; redirects are rejected. No default provider is contacted.
+The task JSON contract is `{ objective, context?, limits? }`. Objective and
+context are plain text (at most 4,000 and 16,000 characters respectively).
+`examples/harbour-task.json` is a closed-scope planning arithmetic example.
+Each dispatch requires an **empty, exclusive store** and creates one isolated
+root. A used or interrupted store cannot be redispatched: limits cannot reset
+on restart. Keep that directory for inspection; it contains the complete graph
+and run audit in the usual MangoDB snapshot.
 
-`iterate` makes at most 1–30 calls per command, persists each transition, and
-stops early when no node is runnable or a call/proposal fails. Failed calls
-are counted and audited without applying mutations. Inspect the error before
-explicitly retrying. `apply` is one externally driven generation.
+Stdout is one JSON outcome with exactly:
+
+- `status`: `resolved`, `partially_resolved`, or `failed`.
+- `result`: the root synthesis, or an explicit executor stopping message if
+  there was no complete synthesis (not a fabricated model conclusion).
+- `evidence`: root evidence with provenance; model claims are not independently
+  verified observations.
+- `blockers`: the unresolved frontier at stopping, including human requests,
+  unfinished children, and unsatisfied prerequisites.
+- `usage`: all attempted generations (including retries), prompt/completion/total
+  tokens, known USD cost, total USD cost, accounting completeness, and outstanding
+  budget reservation. `costUsd: null` means a charge cannot be established;
+  **never interpret this as free**.
+- `stoppingReason`: e.g. `root_terminal`, `generation_exhausted`,
+  `budget_exhausted`, `graph_limit`, `no_runnable_nodes`, `rate_limited`,
+  `provider_preflight_failed`, or a provider/accounting/proposal error.
+
+Task-level failures still return an outcome with exit code zero. Invalid inputs,
+occupied stores, or persistence failures exit nonzero; the caller must check
+both process exit and outcome status. A storage failure aborts immediately and
+may leave a durable `pending` attempt; inspect it rather than automatically retry.
+
+Programmatic callers can import `dispatch` from `tiny-agent-graph/dispatch`
+and call `dispatch(task, { directory, apiKey?, model?, provider? })`.
+The public API owns opening/closing the exclusive store. Directory and provider
+configuration are trusted host options, never model output.
+
+### Fail-closed safety envelope
+
+| Limit | Default | Allowed |
+| --- | --- | --- |
+| `maxGenerations` (HTTP inference attempts, including retries) | 5 | 1–15 |
+| `maxCostUsd` | $0.10 | $0–$0.10 |
+| `concurrency` | 1 | 1 only |
+| `maxRetries` per selected-node call | 1 | 0–1 |
+| `minDelayMs` after the previous call finishes | 3000 | 3000–60000 |
+| `maxOutputTokens` | 1536 | 128–2048 |
+| `maxNodes` including the root | 25 | 1–25 |
+
+Unknown limits or attempts to weaken these ceilings are rejected before
+inference. A zero budget performs no inference. Graph projections remain capped
+at 32,000 serialized characters; graph growth is additionally checked against a
+1 MiB serialized-byte ceiling with space reserved for audit/stopping records.
+Each HTTP response is capped at 2 MiB and each request times out after 30 seconds.
+
+**Paid inference is intentionally unsupported.** The fixed HTTPS OpenRouter
+endpoint accepts only `meta-llama/llama-3.3-70b-instruct:free` (default) or
+`qwen/qwen3-4b:free`, and only the `Chutes` backend. `TAG_MODEL` can select the
+other allowlisted free model; there is no automatic model switch, fallback, or
+paid escalation. Free model availability is not guaranteed. Before any model
+call, TAG locally verifies the model catalogue has zero prices for every
+advertised pricing component. Missing, malformed, unavailable, or nonzero
+prices stop the run. Requests also prohibit backend fallback and require zero
+maximum prompt/completion prices; returned model/provider identities are checked.
+
+The local ledger reserves all remaining USD allowance **durably before I/O**,
+counts the attempt before sending, and releases the reservation only on valid
+usage/cost accounting or an explicit HTTP 429 rejection. Missing/malformed
+accounting or uncertain transport/server failures retain the reservation and
+stop immediately without retries. Reported costs are accumulated; any nonzero
+charge violates the free-only tariff and stops, even below the budget.
+Budget exhaustion stops before another request. As with any remote billing
+API, a provider charging contrary to its advertised zero tariff cannot be
+prevented locally; it is reported, never treated as permission to spend more.
+
+Only explicit HTTP 429 rejections may retry, within **both** the retry and
+generation ceilings. `Retry-After` is honoured up to 60 seconds; invalid or longer
+values stop rather than retry early. HTTP 5xx, authentication errors, timeouts,
+malformed responses/proposals, and output truncation stop. Error bodies and
+credentials are not written to audit. `graph.run` records requested/returned
+model/provider, pricing verification, limits, per-attempt tokens/cost/errors,
+timestamps, reservations, and final stopping reason.
+
+No model output is executed as shell commands or file writes. Validated graph
+mutations are the only automatic effects; tool proposals require human review.
+`tag iterate` and the old unbudgeted HTTP adapter have been retired rather than
+leaving an unsafe CLI bypass. The low-level `core/iterate.js` helper and `apply`
+remain for trusted external-host transitions, not provider inference.
 
 ## Graph rules and human boundaries
 
@@ -117,7 +195,7 @@ explicitly retrying. `apply` is one externally driven generation.
 
 ## Small, portable core
 
-`core/graph.js`, `core/protocol.js`, and `core/iterate.js` use ordinary modern
+`core/graph.js`, `core/protocol.js`, `core/iterate.js`, and `core/dispatch.js` use ordinary modern
 ECMAScript without Node imports. A store supplies asynchronous `load()` and
 `save(state, expectedRevision)` methods; an agent is an asynchronous function
 from graph context to a proposal. Node filesystem/MangoDB and HTTP integration

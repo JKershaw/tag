@@ -9,7 +9,6 @@ import { join } from 'node:path';
 import { seed, applyProposal, nextNode, explain, buildContext, humanUpdate } from '../core/graph.js';
 import { iterate } from '../core/iterate.js';
 import { openStore } from '../adapters/mango.js';
-import { createAgent } from '../adapters/openai.js';
 
 const proposal = (graph, mutations, nodeId = nextNode(graph)?.id) => ({
   protocolVersion: 1, revision: graph.revision, nodeId, summary: 'One bounded step', mutations,
@@ -214,26 +213,6 @@ test('iterate rejects proposals targeting a different runnable node', async () =
   assert.equal(result.stop, 'agent_error');
   assert.equal(state.nodes.find(node => node.id === 'b').status, 'ready');
   assert.equal(state.history.at(-1).nodeId, 'a');
-});
-
-test('OpenAI-compatible adapter sends fresh graph context and hides HTTP error bodies', async () => {
-  let request;
-  const agent = createAgent({
-    endpoint: 'https://example.test/chat/completions', model: 'test', instructions: 'One step',
-    fetchImpl: async (url, options) => {
-      request = options;
-      return { ok: true, json: async () => ({ choices: [{ message: { content: '{"test":true}' } }] }) };
-    },
-  });
-  assert.deepEqual(await agent({ nodeId: 'root' }), { test: true });
-  assert.equal(JSON.parse(request.body).messages.length, 2);
-  assert.equal(request.redirect, 'error');
-  assert.throws(() => createAgent({ endpoint: 'http://remote.test', model: 'x' }), /HTTPS/);
-  const failing = createAgent({
-    endpoint: 'http://localhost:8080', model: 'test', instructions: '',
-    fetchImpl: async () => ({ ok: false, status: 401 }),
-  });
-  await assert.rejects(failing({}), /HTTP 401/);
 });
 
 test('CLI resumes an exported graph and explains the persisted frontier', async () => {
