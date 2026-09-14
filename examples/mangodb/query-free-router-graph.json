@@ -1,0 +1,95 @@
+{
+  "protocolVersion": 1,
+  "revision": 3,
+  "generation": 1,
+  "nodes": [
+    {
+      "id": "root",
+      "objective": "Assess this real MangoDB query check. Compare the observed filtered, sorted, projected result with the expected result, cite the host test, and state the limited scope. Do not claim you ran tools.",
+      "parentId": null,
+      "type": "task",
+      "context": "Trusted-host observation from test/mangodb-tasks.test.js, query case, using @jkershaw/mangodb and an isolated temporary directory: inserted a={active:true,score:4}, b={active:true,score:9}, c={active:false,score:12}, d={active:true,score:7}. After close/reopen, find({active:true,score:{$gte:5}},{projection:{_id:1,score:1}}).sort({score:-1}).limit(2).toArray() returned exactly [{_id:'b',score:9},{_id:'d',score:7}]. Expected: b then d with only _id and score; inactive c and low-score a excluded. This verifies only the stated operator combination.",
+      "status": "failed",
+      "blockedBy": [],
+      "references": [],
+      "evidence": [],
+      "decisions": [],
+      "actions": [],
+      "result": "Execution stopped: provider_unavailable. No complete root synthesis is available.",
+      "reason": "provider_unavailable",
+      "attempts": 1
+    }
+  ],
+  "history": [
+    {
+      "revision": 2,
+      "generation": 1,
+      "nodeId": "root",
+      "outcome": "rejected",
+      "error": "provider_unavailable"
+    },
+    {
+      "revision": 3,
+      "generation": 1,
+      "nodeId": "root",
+      "outcome": "stopped",
+      "stoppingReason": "provider_unavailable"
+    }
+  ],
+  "run": {
+    "limits": {
+      "maxGenerations": 2,
+      "maxCostUsd": 0.03,
+      "concurrency": 1,
+      "maxRetries": 0,
+      "minDelayMs": 3000,
+      "maxOutputTokens": 1536,
+      "maxNodes": 3
+    },
+    "model": "openrouter/free",
+    "provider": "Chutes",
+    "maxGraphBytes": 1048576,
+    "usage": {
+      "generations": 1,
+      "promptTokens": 0,
+      "completionTokens": 0,
+      "totalTokens": 0,
+      "knownCostUsd": 0,
+      "costUsd": null,
+      "accountingComplete": false,
+      "reservedCostUsd": 0.03
+    },
+    "pricing": {
+      "status": "known_free",
+      "reason": "all_prices_zero",
+      "model": "openrouter/free",
+      "provider": "Chutes",
+      "source": "https://openrouter.ai/api/v1/models",
+      "checkedAt": "2026-09-14T20:50:29.728Z",
+      "modelPresent": true,
+      "promptPriceUsd": 0,
+      "completionPriceUsd": 0,
+      "allAdvertisedPricesZero": true,
+      "paidInference": false
+    },
+    "attempts": [
+      {
+        "generation": 1,
+        "nodeId": "root",
+        "model": "openrouter/free",
+        "provider": "Chutes",
+        "status": "rejected",
+        "requestedModel": "openrouter/free",
+        "actualModel": null,
+        "startedAt": "2026-09-14T20:50:29.811Z",
+        "retry": 0,
+        "finishedAt": "2026-09-14T20:50:29.937Z",
+        "reportedCostUsd": null,
+        "usage": null,
+        "error": "provider_unavailable",
+        "httpStatus": 404
+      }
+    ],
+    "stoppingReason": "provider_unavailable"
+  }
+}

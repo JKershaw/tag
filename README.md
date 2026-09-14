@@ -132,14 +132,23 @@ at 32,000 serialized characters; graph growth is additionally checked against a
 Each HTTP response is capped at 2 MiB and each request times out after 30 seconds.
 
 **Paid inference is intentionally unsupported.** The fixed HTTPS OpenRouter
-endpoint accepts only `meta-llama/llama-3.3-70b-instruct:free` (default) or
-`qwen/qwen3-4b:free`, and only the `Chutes` backend. `TAG_MODEL` can select the
-other allowlisted free model; there is no automatic model switch, fallback, or
+endpoint accepts only `meta-llama/llama-3.3-70b-instruct:free` (default),
+`qwen/qwen3-4b:free`, or `openrouter/free`, and only the `Chutes` backend.
+`TAG_MODEL` can explicitly select an allowlisted model or route; there is no automatic model switch, fallback, or
 paid escalation. Free model availability is not guaranteed. Before any model
 call, TAG locally verifies the model catalogue has zero prices for every
 advertised pricing component. Missing, malformed, unavailable, or nonzero
 prices stop the run. Requests also prohibit backend fallback and require zero
 maximum prompt/completion prices; returned model/provider identities are checked.
+
+`openrouter/free` is the sole router exception to exact returned-model matching:
+OpenRouter selects the actual model, whose nonempty bounded model ID must be
+returned along with the allowed provider. The route itself must pass the same
+catalogue validator as ordinary models: its name or documentation alone never
+authorizes inference. The live catalogue must contain exactly one matching entry,
+explicit valid prompt/completion zeros, and no nonzero or invalid advertised
+components. No individual routed-model tariff is hardcoded or inferred.
+The provider restrictions remain intact even if no compatible endpoint exists.
 
 Catalogue knowledge is recorded separately from permission to run and actual
 charges. `graph.run.pricing.status` is one of:
@@ -168,7 +177,9 @@ counts the attempt and marks its cost unknown before sending, and releases the r
 usage/cost accounting or an explicit HTTP 429 rejection. Missing/malformed
 accounting or uncertain transport/server failures retain the reservation and
 stop immediately without retries. Reported costs are accumulated; any nonzero
-charge violates the free-only tariff and stops, even below the budget.
+charge violates the free-only tariff and stops as `pricing_violation`, including
+at or above the budget. A positive reported cost is preserved even if token
+accounting is malformed; total accounting then remains incomplete, not zero.
 Budget exhaustion stops before another request. As with any remote billing
 API, a provider charging contrary to its advertised zero tariff cannot be
 prevented locally; it is reported, never treated as permission to spend more.
@@ -180,6 +191,10 @@ malformed responses/proposals, and output truncation stop. Error bodies and
 credentials are not written to audit. `graph.run` records requested/returned
 model/provider, pricing verification, limits, per-attempt tokens/cost/errors,
 timestamps, reservations, and final stopping reason.
+Each attempt retains `requestedModel` separately from `actualModel` (null when
+no response model is available) and `reportedCostUsd` separately from validated
+usage. HTTP 404 is recorded as `provider_unavailable`, without retry or an
+assumption of zero cost.
 
 No model output is executed as shell commands or file writes. Validated graph
 mutations are the only automatic effects; tool proposals require human review.
@@ -304,6 +319,62 @@ Exact new CLI stdout and reopened MangoDB graph exports are preserved under
 `examples/mangodb/` as `<name>-replay-outcome.json` and
 `<name>-replay-graph.json`. The earlier outcomes, graphs, catalogue diagnostic,
 and self-development `state.json` remain unchanged.
+
+### Catalogue-verified free-router replay (2026-09-14)
+
+At 20:46:27 UTC, the public
+[OpenRouter catalogue](https://openrouter.ai/api/v1/models) returned HTTP 200
+and exactly one `openrouter/free` entry with
+`pricing: { "prompt": "0", "completion": "0" }`, with no other pricing components.
+The ordinary allowlisted models were still absent. OpenRouter's
+[pricing schema](https://openrouter.ai/docs/guides/overview/models#pricing-object)
+defines `"0"` as free; its
+[free-router documentation](https://openrouter.ai/docs/guides/routing/routers/free-router)
+states that both router use and routed requests are free and that the response
+`model` identifies the actual selected model. This justifies allowing explicit
+selection of this route, **not** a pricing-validation exception. Each dispatch
+independently rechecked its live catalogue entry with the unchanged validator
+and persisted `known_free / all_prices_zero`. Missing or invalid router pricing
+still stops before inference. Catalogue tariff verification does not establish
+availability through the required Chutes backend.
+
+All **91 tests passed** (74 baseline plus 17 new router regression cases).
+New coverage includes explicit zero router pricing; unknown, malformed,
+nonzero, absent and ambiguous router entries; requested/actual attribution and
+MangoDB persistence; strict ordinary-model identity checks; provider identity
+and missing usage rejection; positive cost on a later completion, at the budget,
+and with malformed tokens; and HTTP 404 without fallback, retry or assumed cost.
+CodeQL reported zero alerts; a separate read-only code review found no
+significant issues (the automated review binary was unavailable).
+
+Exactly the same three fixtures were dispatched once each, sequentially, at
+20:50:26–20:50:33 UTC in fresh stores under
+`/tmp/tag-mangodb-free-router-eTVq8F`. Before/after SHA-256 checks matched; task
+inputs and limits were not edited. Each retained two maximum attempts, $0.03,
+concurrency one, zero retries, 3-second spacing, 1,536 output tokens and three
+maximum nodes. All requests selected `openrouter/free`, restricted to Chutes,
+with backend fallback disabled and maximum prompt/completion prices zero.
+
+| Fixture | Terminal status / reason | Requested route | Actual model | Attempts | Generations | Provider-reported cost | Graph nodes (compact JSON bytes) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Lifecycle | failed / `provider_unavailable` (HTTP 404) | `openrouter/free` | None returned | 1 | 1 | Unknown (`null`) | 1 (2,376) |
+| Query | failed / `provider_unavailable` (HTTP 404) | `openrouter/free` | None returned | 1 | 1 | Unknown (`null`) | 1 (2,382) |
+| Snapshot | failed / `provider_unavailable` (HTTP 404) | `openrouter/free` | None returned | 1 | 1 | Unknown (`null`) | 1 (2,449) |
+
+Each run retained its $0.03 reservation with `accountingComplete: false`.
+The zero known-cost/token counters are **not** provider reports of zero usage:
+no completion usage was returned. Combined actual cost remains unknown, with
+$0.09 reserved. HTTP 404 establishes request unavailability, not its underlying
+cause or a billable/unbillable determination; raw error bodies were not retained.
+No alternative provider, model, paid fallback, additional replay, or Harbour
+integration was attempted.
+
+Exact CLI outcomes and reopened graph/audit exports are preserved under
+`examples/mangodb/` as `<name>-free-router-outcome.json` and
+`<name>-free-router-graph.json`; earlier artifacts remain unchanged.
+**This is not the first verified live TAG model completion:** pricing preflight
+is now positively verified for this route, but none of the three requests
+returned a model completion.
 
 ## Graph rules and human boundaries
 

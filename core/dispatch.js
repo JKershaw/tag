@@ -106,6 +106,7 @@ export async function dispatchRun(task, { store, provider, wait = sleep, now = (
     pending.run.attempts.push({
       generation: pending.run.usage.generations, nodeId: node.id,
       model: provider.model, provider: provider.name, status: 'pending',
+      requestedModel: provider.model, actualModel: null,
       startedAt: new Date().toISOString(), retry: retries,
     });
     await save(pending);
@@ -121,6 +122,8 @@ export async function dispatchRun(task, { store, provider, wait = sleep, now = (
     Object.assign(attempt, {
       status: 'rejected', finishedAt: new Date().toISOString(),
       model: response.model ?? provider.model, provider: response.provider ?? provider.name,
+      actualModel: response.model ?? null,
+      reportedCostUsd: response.reportedCostUsd ?? response.usage?.costUsd ?? null,
       usage: response.usage ?? null, error: response.error ?? null, httpStatus: response.httpStatus ?? null,
     });
     const usage = updated.run.usage;
@@ -143,8 +146,8 @@ export async function dispatchRun(task, { store, provider, wait = sleep, now = (
       attempt.error = response.error;
     }
     let reason = response.error;
-    if (usage.knownCostUsd >= limits.maxCostUsd) reason = 'budget_exhausted';
-    else if (response.usage?.costUsd > 0) reason = 'pricing_violation';
+    if (response.usage?.costUsd > 0) reason = 'pricing_violation';
+    else if (usage.knownCostUsd >= limits.maxCostUsd) reason = 'budget_exhausted';
     if (!reason) {
       try {
         if (response.proposal?.nodeId !== node.id) throw new Error('wrong_node');
