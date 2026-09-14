@@ -163,6 +163,42 @@ mutations are the only automatic effects; tool proposals require human review.
 leaving an unsafe CLI bypass. The low-level `core/iterate.js` helper and `apply`
 remain for trusted external-host transitions, not provider inference.
 
+### Milestone experiment (2026-09-14)
+
+All 31 offline tests passed **before** the live attempt, including budget and
+generation exhaustion, graph expansion, retries, malformed responses, and rate
+limits. The deterministic integration test uses real MangoDB, a mocked HTTP
+provider, and four generations: decomposition into two dependent children,
+child resolution, and root synthesis. Its caller receives “The total is 42,
+within the cap of 50 by 8.” The graph has three nodes. This is not live inference.
+
+The single live CLI attempt submitted `examples/harbour-task.json` to the
+isolated `/tmp/tag-harbour-live-20260914` store. It asks whether three planned
+generations estimated at $0.012 + $0.018 + $0.000 fit five generations/$0.10;
+those planning numbers are not actual usage. Limits were exactly concurrency 1,
+five attempts, $0.10, one retry, 3-second spacing, 1,536 output tokens, 25 nodes.
+Requested routing was `meta-llama/llama-3.3-70b-instruct:free` via Chutes/OpenRouter.
+
+OpenRouter discovery failed with `getaddrinfo ENOTFOUND openrouter.ai` in this
+environment. Dispatch failed closed at pricing preflight, **before any
+generation**. Actual models used: none; generations: **0**; actual cost:
+**$0.00**; graph size: **1 node**. The caller received `status: "failed"` and
+`stoppingReason: "provider_preflight_failed"`, with the explicit result:
+“Execution stopped: provider_preflight_failed. No complete root synthesis is
+available.”
+
+The exact exported graph and stdout are preserved as
+`examples/harbour-live-graph.json` and `examples/harbour-live-outcome.json`.
+The graph can be imported with `init --from` into a separate empty store.
+The original self-development `state.json` was inspected and left unchanged.
+
+**The live end-to-end milestone is not yet proven.** Human/environment action
+is required to permit DNS/HTTPS access to `openrouter.ai` and confirm the
+allowlisted free model/backend is available. Then submit the same example into
+a new store. No further inference, paid fallback, service, or Harbour-specific
+graph coupling was attempted. Harbour still needs to invoke this CLI/API and
+consume the outcome; its source is not part of this repository.
+
 ## Graph rules and human boundaries
 
 - A ready node runs only when its prerequisites are **resolved** and all its

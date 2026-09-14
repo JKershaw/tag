@@ -1,0 +1,59 @@
+{
+  "protocolVersion": 1,
+  "revision": 1,
+  "generation": 0,
+  "nodes": [
+    {
+      "id": "root",
+      "objective": "Check whether this proposed closed-scope TAG run fits Harbour's generation and spend limits. Report total estimated spend, remaining spend allowance, remaining generations, and a concise accept/reject recommendation. Use only the supplied planning data; no tools or external facts are needed.",
+      "parentId": null,
+      "type": "task",
+      "context": "Harbour is evaluating a task with three planned model generations costing an estimated $0.012, $0.018, and $0.000 respectively. Its task cap is five generations and $0.10. These are hypothetical planning estimates, not actual inference charges for this execution.",
+      "status": "failed",
+      "blockedBy": [],
+      "references": [],
+      "evidence": [],
+      "decisions": [],
+      "actions": [],
+      "result": "Execution stopped: provider_preflight_failed. No complete root synthesis is available.",
+      "reason": "provider_preflight_failed",
+      "attempts": 0
+    }
+  ],
+  "history": [
+    {
+      "revision": 1,
+      "generation": 0,
+      "nodeId": "root",
+      "outcome": "stopped",
+      "stoppingReason": "provider_preflight_failed"
+    }
+  ],
+  "run": {
+    "limits": {
+      "maxGenerations": 5,
+      "maxCostUsd": 0.1,
+      "concurrency": 1,
+      "maxRetries": 1,
+      "minDelayMs": 3000,
+      "maxOutputTokens": 1536,
+      "maxNodes": 25
+    },
+    "model": "meta-llama/llama-3.3-70b-instruct:free",
+    "provider": "Chutes",
+    "maxGraphBytes": 1048576,
+    "usage": {
+      "generations": 0,
+      "promptTokens": 0,
+      "completionTokens": 0,
+      "totalTokens": 0,
+      "knownCostUsd": 0,
+      "costUsd": 0,
+      "accountingComplete": true,
+      "reservedCostUsd": 0
+    },
+    "attempts": [],
+    "stoppingReason": "provider_preflight_failed",
+    "preflightError": "Provider allowlist/pricing verification unavailable or rejected"
+  }
+}
