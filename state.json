@@ -1,7 +1,7 @@
 {
   "protocolVersion": 1,
-  "revision": 3,
-  "generation": 2,
+  "revision": 4,
+  "generation": 3,
   "nodes": [
     {
       "id": "root",
@@ -64,15 +64,21 @@
       "parentId": "root",
       "type": "task",
       "context": "Add concise CLI diagnostics distinguishing explicit human blocks, unresolved prerequisites and unfinished children. Include failed or partially resolved prerequisites that cannot satisfy a dependency. Preserve existing scheduling and explicit upward synthesis; validate diagnostics with targeted tests using the existing runner.",
-      "status": "ready",
+      "status": "resolved",
       "blockedBy": [],
       "references": [],
-      "evidence": [],
+      "evidence": [
+        {
+          "text": "Added explain(graph, nodeId), CLI explain, and status.waiting. Diagnostics distinguish explicit blocked/human states, unfinished children and prerequisite outcomes, including failed prerequisites. Host ran npm test: all 13 tests passed, including actual child-process CLI import/reopen/diagnostics from an exported snapshot.",
+          "source": "core/graph.js:explain; cli.js; test/tag.test.js; npm test generation 3",
+          "generation": 3
+        }
+      ],
       "decisions": [],
       "actions": [],
-      "result": null,
+      "result": "Waiting frontier is inspectable from durable graph state, with unchanged dependency scheduling and explicit parent synthesis.",
       "reason": null,
-      "attempts": 0
+      "attempts": 1
     },
     {
       "id": "dogfood-configuration",
@@ -218,6 +224,31 @@
             "op": "resolve",
             "id": "bounded-context",
             "result": "Bounded graph-derived context implemented and verified without losing stored evidence or passing previous worker conversations."
+          }
+        ]
+      }
+    },
+    {
+      "generation": 3,
+      "revision": 4,
+      "nodeId": "frontier-explanations",
+      "outcome": "applied",
+      "proposal": {
+        "protocolVersion": 1,
+        "revision": 3,
+        "nodeId": "frontier-explanations",
+        "summary": "Implement and verify persisted frontier explanations without changing scheduler semantics.",
+        "mutations": [
+          {
+            "op": "evidence",
+            "id": "frontier-explanations",
+            "text": "Added explain(graph, nodeId), CLI explain, and status.waiting. Diagnostics distinguish explicit blocked/human states, unfinished children and prerequisite outcomes, including failed prerequisites. Host ran npm test: all 13 tests passed, including actual child-process CLI import/reopen/diagnostics from an exported snapshot.",
+            "source": "core/graph.js:explain; cli.js; test/tag.test.js; npm test generation 3"
+          },
+          {
+            "op": "resolve",
+            "id": "frontier-explanations",
+            "result": "Waiting frontier is inspectable from durable graph state, with unchanged dependency scheduling and explicit parent synthesis."
           }
         ]
       }

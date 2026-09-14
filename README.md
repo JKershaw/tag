@@ -13,6 +13,7 @@ npm ci
 npm test
 node cli.js init
 node cli.js status
+node cli.js explain root
 node cli.js context
 node cli.js protocol
 ```
@@ -21,8 +22,8 @@ The only direct runtime dependency is **`@jkershaw/mangodb`**, the file-based
 MangoDB, not MongoDB or the unrelated unscoped `mangodb` package.
 MangoDB stores a single graph-and-audit snapshot under `.tag/tag/`.
 `--store /absolute/path` selects another directory. Copy a closed store to
-move it to another machine. The original empty `state.json` is not a live
-database; `graph` exports a portable snapshot and `init --from snapshot.json`
+move it to another machine. `state.json` contains the exported self-development
+graph, not a live database; `graph` exports a portable snapshot and `init --from snapshot.json`
 imports one into an empty MangoDB store.
 
 ## External coding-agent workflow
@@ -98,6 +99,10 @@ explicitly retrying. `apply` is one externally driven generation.
 - `reference`, `evidence`, and `decision` retain context and provenance.
   Projection includes the current node, ancestors, dependencies, references,
   children, and siblings; audit history is never normal model context.
+  The default projection budget is 32,000 serialized characters. Long fields
+  are literal prefixes, recent records are preferred, and all omissions are
+  explicit. `inspect <id>` retrieves the full durable node; do not infer missing
+  evidence from a clipped projection.
 - Create a `question`, block it with `human: true`, and add a dependency to
   represent missing information. Independent branches remain runnable.
 - `propose` records a tool request and marks the node `needs_human`.
@@ -105,6 +110,8 @@ explicitly retrying. `apply` is one externally driven generation.
   A trusted host must review and perform permitted actions externally, then
   `resume <id> <evidence>`. Use `answer <question-id> <answer>` for questions.
   These explicit human transitions increment revision but not generation.
+- `explain <id>` and `status.waiting` distinguish human blocks, unfinished
+  children, and unsatisfied prerequisites (including failed/partial outcomes).
 - Mutation rules are explicit in `core/protocol.js`; changing them requires
   an explicit version change, not a silent self-edit.
 

@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { seed, validateGraph, nextNode, runnable, buildContext, applyProposal, humanUpdate } from './core/graph.js';
+import { seed, validateGraph, nextNode, runnable, explain, buildContext, applyProposal, humanUpdate } from './core/graph.js';
 import { iterate } from './core/iterate.js';
 import { protocol } from './core/protocol.js';
 import { openStore } from './adapters/mango.js';
@@ -14,7 +14,7 @@ const readJSON = async path => JSON.parse(await readFile(resolve(path), 'utf8'))
 const usage = `TAG — Tiny Agent Node Graph & Lightweight Executor
   tag init [objective] [--from snapshot.json]
   tag status | graph | history | protocol
-  tag inspect <id> | context [id]
+  tag inspect <id> | explain <id> | context [id]
   tag apply <proposal.json>
   tag answer <question-id> <answer> | resume <node-id> <evidence>
   tag iterate [--count 1..30]
@@ -31,7 +31,7 @@ async function main() {
   const [command, ...args] = positionals;
   if (values.help || !command) return console.log(usage);
   if (command === 'protocol') return print(protocol);
-  if (!['init', 'status', 'graph', 'history', 'inspect', 'context', 'apply', 'answer', 'resume', 'iterate'].includes(command)) {
+  if (!['init', 'status', 'graph', 'history', 'inspect', 'explain', 'context', 'apply', 'answer', 'resume', 'iterate'].includes(command)) {
     throw new Error(`Unknown command: ${command}`);
   }
   const store = await openStore(values.store);
@@ -54,10 +54,12 @@ async function main() {
           next: nextNode(graph)?.id ?? null, runnable: runnable(graph).map(node => node.id),
           blocked: graph.nodes.filter(node => ['blocked', 'needs_human'].includes(node.status))
             .map(({ id, reason }) => ({ id, reason })),
+          waiting: graph.nodes.map(node => explain(graph, node.id)).filter(node => !node.terminal && !node.runnable),
           roots: graph.nodes.filter(node => node.parentId === null).map(({ id, status, result }) => ({ id, status, result })),
         });
       case 'graph': return print(graph);
       case 'history': return print(graph.history);
+      case 'explain': return print(explain(graph, args[0]));
       case 'inspect': {
         const node = graph.nodes.find(item => item.id === args[0]);
         if (!node) throw new Error('Unknown node');

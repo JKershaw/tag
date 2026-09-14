@@ -1,9 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { seed, applyProposal, nextNode, buildContext, humanUpdate } from '../core/graph.js';
+import { seed, applyProposal, nextNode, explain, buildContext, humanUpdate } from '../core/graph.js';
 import { iterate } from '../core/iterate.js';
 import { openStore } from '../adapters/mango.js';
 import { createAgent } from '../adapters/openai.js';
@@ -57,6 +60,25 @@ test('information gaps block dependent work but not independent branches', () =>
   assert.equal(nextNode(graph).id, 'dependent');
   assert.equal(graph.generation, 1);
   assert.equal(graph.revision, 2);
+});
+
+test('frontier explanations distinguish human blocks, waiting children and failed prerequisites', () => {
+  let graph = seed('Build');
+  graph = applyProposal(graph, proposal(graph, [
+    add('a'), add('b'), add('human'),
+    { op: 'depend', id: 'b', on: 'a' },
+    { op: 'block', id: 'human', human: true, reason: 'Need a decision' },
+  ]));
+  assert.equal(explain(graph, 'a').runnable, true);
+  assert.deepEqual(explain(graph, 'b').prerequisites, [{ id: 'a', status: 'ready' }]);
+  assert.equal(explain(graph, 'human').reason, 'Need a decision');
+  assert.equal(explain(graph, 'root').children.length, 3);
+  graph = applyProposal(graph, proposal(graph, [{ ...resolve('a'), status: 'failed' }], 'a'));
+  assert.deepEqual(explain(graph, 'b').prerequisites, [{ id: 'a', status: 'failed' }]);
+  assert.equal(explain(graph, 'a').terminal, true);
+  assert.equal(explain(graph, 'root').children.length, 2);
+  assert.equal(nextNode(graph), null);
+  assert.throws(() => explain(graph, 'missing'), /Unknown/);
 });
 
 test('context is graph-derived, detached and excludes invocation history', () => {
@@ -177,4 +199,31 @@ test('OpenAI-compatible adapter sends fresh graph context and hides HTTP error b
     fetchImpl: async () => ({ ok: false, status: 401 }),
   });
   await assert.rejects(failing({}), /HTTP 401/);
+});
+
+test('CLI resumes an exported graph and explains the persisted frontier', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'tag-cli-'));
+  const execute = promisify(execFile);
+  const cli = fileURLToPath(new URL('../cli.js', import.meta.url));
+  const run = async (...args) => {
+    const { stdout } = await execute(process.execPath, [cli, ...args, '--store', join(directory, 'store')], { cwd: directory });
+    return JSON.parse(stdout);
+  };
+  try {
+    const graph = applyProposal(seed('Build'), proposal(seed('Build'), [
+      add('question'), { op: 'block', id: 'question', human: true, reason: 'Need policy' },
+    ]));
+    const snapshot = join(directory, 'snapshot.json');
+    await writeFile(snapshot, JSON.stringify(graph));
+    await run('init', '--from', snapshot);
+    const status = await run('status');
+    assert.equal(status.next, null);
+    assert.deepEqual(status.waiting.find(node => node.id === 'root').children, [{ id: 'question', status: 'needs_human' }]);
+    assert.equal((await run('explain', 'question')).reason, 'Need policy');
+    assert.deepEqual(await run('graph'), graph);
+    await assert.rejects(run('init'), /already initialized/);
+    await assert.rejects(run('explain', 'missing'), /Unknown node/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

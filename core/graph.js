@@ -103,6 +103,20 @@ export function nextNode(graph) {
   return runnable(graph).sort((a, b) => a.attempts - b.attempts)[0] ?? null;
 }
 
+export function explain(graph, nodeId) {
+  const node = graph.nodes.find(item => item.id === nodeId);
+  assert(node, 'Unknown node');
+  const prerequisites = node.blockedBy.map(target => graph.nodes.find(item => item.id === target))
+    .filter(item => item.status !== 'resolved').map(({ id, status }) => ({ id, status }));
+  const children = graph.nodes.filter(item => item.parentId === nodeId && !terminal.has(item.status))
+    .map(({ id, status }) => ({ id, status }));
+  return {
+    id: node.id, status: node.status, terminal: terminal.has(node.status),
+    runnable: node.status === 'ready' && prerequisites.length === 0 && children.length === 0,
+    reason: node.reason, prerequisites, children,
+  };
+}
+
 export function buildContext(graph, nodeId = nextNode(graph)?.id, { maxCharacters = 32000 } = {}) {
   validateGraph(graph);
   assert(Number.isSafeInteger(maxCharacters) && maxCharacters >= 8000, 'Context budget must be at least 8000 characters');
