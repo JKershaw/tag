@@ -1,1 +1,226 @@
-
+{
+  "protocolVersion": 1,
+  "revision": 3,
+  "generation": 2,
+  "nodes": [
+    {
+      "id": "root",
+      "objective": "Build TAG into the graph-native agent system described in transcript.md and bootstrap.md",
+      "parentId": null,
+      "type": "task",
+      "context": "# TAG — Session Transcript\n\nSource session: https://chatgpt.com/share/6aa833ef-fd04-83eb-890c-5426502fd165?ogimg=plain\n\nThis transcript contains the substantive user/assistant discussion that led to the idea for TAG:\n**Tiny Agent Node Graph & Lightweight Executor**.\n\n---\n\n## User\n\nOk, so I imagine a task as a node in a graph. An llm takes a node, and can create subnodes/branch. \n\nBasically, given a task it breaks it down in a tree structure until the node is a code change. Then it can take the nodes and tree and walk it back up until the task has a solution in whatever resolution was reached until there was an information gap.\n\nEach node and llm with basic harness.\n\nSome nodes \"block\" others, forcing an order where needed.\n\n## Assistant\n\nYes. I think this gives you a much cleaner primitive than “agent runs a task”.\n\nThe core object becomes a **node**, and the LLM is essentially a transformation engine that moves nodes through different levels of resolution.\n\nConceptually:\n\n```text\n                    [ Build authentication ]\n                              │\n              ┌───────────────┴───────────────┐\n              ▼                               ▼\n      [ Understand auth flow ]        [ Add password reset ]\n              │                               │\n         information                         ▼\n            gap                    [ Add reset endpoint ]\n                                            │\n                                   ┌────────┴────────┐\n                                   ▼                 ▼\n                            [ Create token ]   [ Send email ]\n                                   │                 │\n                                   ▼                 ▼\n                              code change       code change\n```\n\nThen the interesting bit is that execution works in **both directions**.\n\n### Downward: decomposition\n\nAn LLM receives:\n\n```text\nnode\n+ ancestors\n+ relevant siblings\n+ project context\n+ available tools\n```\n\nand decides something like:\n\n```text\nSOLVE directly\nDECOMPOSE into children\nREQUEST information\nBLOCK on another node\nFAIL / abandon\n```\n\nSo:\n\n```text\nTASK\n ↓\nSUBTASK\n ↓\nSUBTASK\n ↓\nCODE CHANGE\n```\n\nYou don't actually need to prescribe how deep the tree is. The agent keeps increasing resolution until it reaches something it can confidently execute.\n\n### Upward: synthesis\n\nOnce leaves resolve, their results propagate upwards.\n\n```text\ncode change ✓\n     ↓\nimplementation task ✓\n     ↓\nfeature task ✓\n     ↓\noriginal task ✓\n```\n\nBut importantly, a parent doesn't necessarily become simply `done`.\n\nIt might become:\n\n```text\nresolved\npartially_resolved\nblocked\nneeds_human\nneeds_information\nfailed\n```\n\nSo the result of a tree might naturally be:\n\n> We implemented the API and UI, but cannot complete the Stripe integration because the account credentials aren't available.\n\nThat's a perfectly valid resolution of the root node. The graph has discovered the boundary of what is currently knowable/doable.\n\n## And I wouldn't quite call it a tree\n\nOnce you introduce:\n\n> Some nodes block other nodes.\n\nyou've basically got a **DAG**.\n\nFor example:\n\n```text\n                 [ Implement checkout ]\n                    /           \\\n                   /             \\\n                  ▼               ▼\n        [ Build API ]       [ Build UI ]\n                  │               │\n                  └──────┐  ┌─────┘\n                         ▼  ▼\n                    [ Integration ]\n```\n\nOr more explicitly:\n\n```text\n[Design schema] ───────▶ [Implement API]\n      │\n      └───────────────▶ [Implement migration]\n\n[Implement API] ───────▶ [Integration test]\n[Implement migration] ─▶ [Integration test]\n```\n\nThe hierarchy answers:\n\n> **Why does this node exist?**\n\nDependencies answer:\n\n> **When can this node run?**\n\nThat's a very useful separation.\n\nI would therefore make these two edge types first-class:\n\n```text\nparent → child\nnode   → blocked_by\n```\n\nrather than trying to encode ordering into the hierarchy.\n\n## The node can be surprisingly small\n\nSomething roughly like:\n\n```js\n{\n  id,\n  parentId,\n\n  objective,\n  context,\n\n  status,\n  resolution,\n\n  blockedBy: [],\n\n  children: [],\n\n  attempts: []\n}\n```\n\nWith perhaps one especially important field:\n\n```js\nresolutionLevel\n```\n\nSomething like:\n\n```text\nintent\nplan\ntask\nimplementation\ncode_change\nverification\n```\n\nThough I'd be tempted **not** to make those rigid types initially. Let the graph emerge rather than forcing every problem through the same ontology.\n\nThe harness around each node can then be extremely small:\n\n```text\n1. Gather node context\n2. Gather relevant graph context\n3. Ask model for next action\n4. Execute tools if required\n5. Record result\n6. Mutate graph\n7. Find newly-runnable nodes\n```\n\nAnd repeat.\n\n## There's a really nice scheduler hiding in this\n\nAt any moment the graph has a **frontier**:\n\n```text\n              resolved\n                 │\n        ┌────────┴─────────┐\n        ▼                  ▼\n    runnable           runnable\n        │                  │\n        ▼                  ▼\n     agent A            agent B\n\n             blocked\n                │\n                ▼\n          waiting for A\n```\n\nSo rather than an agent being responsible for recursively doing everything, the orchestration system can continually ask:\n\n> Which unresolved nodes have all their dependencies satisfied?\n\nThose are runnable.\n\nThat immediately gives you:\n\n- parallelism\n- bounded concurrency\n- model selection per node\n- retries per node\n- human intervention per node\n- cost accounting per node\n- provenance\n- resumability\n- delegation across different harnesses\n\nAnd it avoids requiring a single giant agent context.\n\n## The particularly powerful bit is that nodes don't have to mean “work”\n\nA node could represent:\n\n```text\nImplement feature\nInvestigate behaviour\nAnswer question\nMake decision\nAcquire information\nModify code\nRun test\nVerify assumption\nAsk human\n```\n\nFor example:\n\n```text\n[Fix login bug]\n       │\n       ▼\n[Determine why token expires]\n       │\n       ├──▶ [Inspect auth middleware]\n       │\n       └──▶ [What is intended expiry time?]\n                         │\n                         ▼\n                    HUMAN BLOCK\n```\n\nMeanwhile the rest of the graph can continue wherever it isn't dependent on that answer.\n\nThat means **uncertainty itself becomes graph structure** rather than something buried in an agent's context window.\n\nI think that's an unusually important property.\n\n## It also gives Harbour a wonderfully simple conceptual model\n\nYou could almost reduce the whole system to:\n\n> **Harbour maintains a graph of things that need resolving. Agents increase the resolution of nodes until they can resolve them, discover dependencies, or reach an information boundary. Resolutions propagate back through the graph.**\n\nAnd then Autopilot isn't really a special complicated thing anymore.\n\nIt's essentially:\n\n```text\nwhile root unresolved:\n    find runnable frontier\n    dispatch nodes\n    incorporate results\n    expand graph\n    propagate resolutions\n```\n\nwith human/cost/time/token policies governing the loop.\n\nThat feels significantly more fundamental than the prompt-template orchestration model we've been discussing. Prompt types could become **strategies available to a node**, rather than the organising principle of Harbour itself.\n\n---\n\n## User\n\nIt would effectively be an agent harness, but it's context isn't a simple long string. It's nodes.\n\n## Assistant\n\nExactly. That’s the more interesting abstraction.\n\nThe harness still looks like an agent harness, but instead of:\n\n```text\nsystem prompt\n+ conversation history\n+ files\n+ previous tool output\n= context window\n```\n\nyou have something closer to:\n\n```text\ncurrent node\n+ ancestors\n+ relevant descendants\n+ dependencies\n+ blockers\n+ sibling outcomes\n+ linked evidence\n+ project/global nodes\n= context projection\n```\n\nSo the agent's \"context\" is not really stored as a transcript. It's **computed from the graph for each invocation**.\n\nThat changes quite a lot.\n\nA node might be:\n\n```js\n{\n  id: \"implement-reset-token\",\n\n  objective: \"Implement password reset token generation\",\n\n  parent: \"password-reset\",\n  blockedBy: [\"choose-token-policy\"],\n\n  evidence: [\n    \"auth-schema\",\n    \"existing-token-implementation\"\n  ],\n\n  children: [],\n\n  state: \"ready\",\n\n  result: null\n}\n```\n\nWhen an LLM operates on it, the harness doesn't just dump every node into the prompt. It performs a **context query**:\n\n```text\nGive me:\n\n- this node\n- its purpose\n- relevant ancestor decisions\n- resolved dependencies\n- relevant code/evidence nodes\n- neighbouring work likely to affect it\n```\n\nand builds a temporary working context.\n\nSo the graph becomes something like **external structured memory**, while the model's context window becomes a cache or working set.\n\nThat is quite different from conventional agents.\n\n## Context becomes a function\n\nYou could almost formalise it as:\n\n```text\nContext(node, graph, policy) → working context\n```\n\nWhere `policy` might determine:\n\n- maximum tokens\n- traversal depth\n- relevance threshold\n- whether unresolved siblings are included\n- how much ancestor history matters\n- whether raw evidence or summaries are preferred\n\nThen different agents could look at the *same node* with different projections.\n\nFor example, a coding agent might receive:\n\n```text\nnode\nparent requirement\nresolved architecture decisions\naffected files\ntests\nblocking dependencies\n```\n\nWhereas a review agent gets:\n\n```text\nnode\noriginal objective\nimplemented result\nsibling results\nacceptance criteria\ndiff\ntests\n```\n\nSame graph. Different context lens.\n\n## It also fixes one of the nastiest agent problems\n\nLong-running agents usually accumulate state like this:\n\n```text\nturn 1\nturn 2\nturn 3\ntool output\nturn 4\nsummary\nturn 5\ntool output\n...\n```\n\nEventually the model has to infer:\n\n> Which of these 80,000 tokens still matter?\n\nYour version moves that responsibility out of the LLM.\n\nThe harness already knows:\n\n```text\nthis decision superseded that one\nthis investigation resolved this uncertainty\nthis task depends on these two results\nthis file is relevant to these nodes\nthis branch failed\n```\n\nSo instead of endlessly compressing a conversation, you're **maintaining structured state**.\n\nThat feels like a much better substrate for persistent agents.\n\n## And nodes can carry provenance\n\nI'd make this a core property.\n\nA resolution shouldn't just be:\n\n```text\n\"use JWT\"\n```\n\nIt should be something like:\n\n```js\n{\n  conclusion: \"Use signed 15-minute JWT reset tokens\",\n  derivedFrom: [\n    \"security-requirements\",\n    \"existing-auth-library\",\n    \"investigation-349\"\n  ],\n  producedBy: \"decision-351\",\n  confidence: 0.91\n}\n```\n\nThen an agent can traverse *why* something is believed rather than merely inheriting a textual summary.\n\nThat gives you something conventional chat history is very poor at:\n\n```text\nWhat do we know?\nWhy do we know it?\nWhat depends on it?\nWhat would become invalid if it changed?\n```\n\n## Which suggests the node itself may be the agent's unit of cognition\n\nRather than thinking:\n\n> \"An agent has memory.\"\n\nyou can think:\n\n> **\"The graph has memory; an agent temporarily inhabits a node.\"**\n\nIt receives the relevant portion of the graph, reasons, uses tools, and leaves behind graph mutations:\n\n```text\nnew child\nnew dependency\nnew evidence\nnew decision\nnew result\nnew blocker\nnode resolved\n```\n\nThen it disappears.\n\nAnother model — even a completely different provider — can pick up the node later without needing the previous agent's internal conversation.\n\nThat is very attractive for Harbour because it makes agents fundamentally disposable.\n\n## The graph can also contain different kinds of context\n\nYou may eventually find that you don't even need a sharp divide between \"task\" and \"memory\".\n\nFor example:\n\n```text\nTASK\n\"Implement password reset\"\n\nDECISION\n\"Use existing email provider\"\n\nFACT\n\"Users authenticate via email\"\n\nQUESTION\n\"What expiry period should reset links use?\"\n\nEVIDENCE\n\"src/auth/token.js\"\n\nRESULT\n\"Reset endpoint implemented\"\n\nCONSTRAINT\n\"Do not change the users table\"\n```\n\nAll of those can just be nodes with typed relationships.\n\nThen:\n\n```text\nTASK ─requires────▶ DECISION\nTASK ─uses────────▶ FACT\nTASK ─reads───────▶ EVIDENCE\nQUESTION ─blocks──▶ TASK\nRESULT ─resolves──▶ TASK\n```\n\nAt that point you've moved from **task graph** toward a **reasoning graph**.\n\nAnd I think that distinction matters: the task tree may be the initial visible metaphor, but underneath, what you're really constructing is a structured model of the agent's understanding of the project.\n\nThe bit I'd concentrate on next is therefore not the agent loop itself. That's relatively straightforward.\n\nIt's **the context-selection algorithm**: given one node and a large graph, what is the smallest useful subgraph to hand to the model?\n\nIf that works well, the rest of this architecture becomes surprisingly elegant.\n\n---\n\n## User\n\nLet's do a literature study to see how much of this idea has already been explored.\n\n## Assistant\n\nYes. I did a first-pass literature study across both classical AI and modern LLM-agent work. The result is interesting: **almost every individual component of the idea has substantial precedent, but I did not find a well-established architecture that combines them in quite the way we're describing.**\n\nThe closest description of the gap is:\n\n> **A persistent, dynamically expanding problem graph in which nodes are both units of work and units of context, LLM invocations operate locally over graph-derived context, dependencies determine execution order, information gaps become explicit nodes, and completed leaves are progressively synthesized upward into resolutions of their ancestors.**\n\nThat exact combination seems much less explored than I expected.\n\n### Main related areas identified\n\n- **AND/OR graphs** — decomposition into required or alternative subproblems.\n- **Hierarchical Task Networks (HTNs)** — recursive task decomposition until executable actions.\n- **Soar** — impasses create substates/subgoals to resolve missing knowledge.\n- **Blackboard systems** — shared structured problem-solving state.\n- **Tree of Thoughts / Graph of Thoughts** — graph/tree reasoning during LLM inference.\n- **RAP / LATS** — LLM reasoning as search/planning.\n- **MemGPT** — external persistent memory with context as a working set.\n- **A-MEM** — graph-shaped persistent agent memory.\n- **GraphRAG / HippoRAG** — graph-derived context retrieval.\n- **Context Graphs** — live relational state for agents.\n- **AFlow** — graph-based LLM workflows.\n- **CodePlan** — dynamic plan graph for repository-level coding.\n- **Truth Maintenance Systems** — explicit justifications and invalidation of dependent beliefs.\n\nThe central distinction that emerged was:\n\n> **Move the agent's state out of the context window and into a persistent semantic problem graph.**\n\nThen make an LLM invocation approximately stateless:\n\n```text\n(node, graph projection, tools)\n            ↓\n           LLM\n            ↓\ngraph mutations + world mutations\n```\n\nThe graph becomes the persistent agent; individual LLM invocations become disposable workers operating on graph state.\n\nThe research opportunity appears to lie less in any individual ingredient and more in the combination:\n\n- persistent semantic task/problem graph\n- dynamic LLM decomposition\n- dependency-aware execution\n- graph-derived context\n- explicit information boundaries\n- upward synthesis\n- provenance\n- resumability across model instances\n\nA useful framing was:\n\n> **Can long-horizon LLM agents perform better when their persistent cognitive state is represented as a dynamically generated problem graph, rather than as accumulated conversational context?**\n\n---\n\n## User\n\nOr, we could dogfood. We put a .md copy of this session's transcript in, with an instruction to iterate x times/run for x many generations.\n\n## Assistant\n\nYes — and that is probably a better experiment than designing too much architecture first.\n\nTake this conversation as the **root problem state**, rather than writing a bespoke benchmark. Give the prototype the transcript plus a deliberately minimal instruction.\n\nFor example:\n\n```text\nYou are operating on a problem represented as a graph of nodes.\n\nThe attached transcript describes the problem and current thinking.\n\nYour job is to advance the problem.\n\nFor the current node, you may:\n- resolve it\n- decompose it into child nodes\n- create a dependency\n- identify an information gap\n- create a question requiring human input\n- attach evidence or a conclusion\n- mark it blocked\n\nOperate only on the context supplied by the harness.\n\nContinue until no runnable nodes remain or the generation limit is reached.\n```\n\nThen set, say:\n\n```text\ngenerations = 50\nmax_concurrency = 3\n```\n\nThe important thing is **not to tell it how to research/design the graph architecture** beyond that. Otherwise we'd mostly be testing our prompt.\n\nStart with one node:\n\n```text\nROOT\n│\n└── \"Investigate and develop the graph-native agent\n     architecture described in transcript.md\"\n```\n\nThe strongest dogfood test is:\n\n> **Do not give later generations the previous generation transcripts.**\n\nGive them only the graph projection their node requires.\n\nIf they can continue coherently, the central hypothesis has been demonstrated.\n\nAn even stronger experiment would deliberately swap models during the run. If the architecture works, model continuity should matter much less because continuity belongs to the graph rather than the model session.\n\nKeep individual model invocations as an audit log, but don't make them normal context.\n\nAfter a run, give a fresh model only the resulting graph and ask:\n\n> What is the current understanding of this project, what has been established, what remains uncertain, and what should happen next?\n\nCompare that with a model receiving the full multi-generation transcript.\n\nThe root task can effectively be:\n\n> Work out whether this architecture is a good idea.\n\nSo if the experiment works, the architecture will have researched, specified and potentially implemented **itself**.\n\n---\n\n## User\n\nWould you recommend I start with this session's transcript as the most minimalist kickoff? There's something pleasant about the idea. But, a more formal document covering everything may be smarter. And should the \"iterate\" command be well specified... and should we outline an architecture so it can run effectively as code asap, a coding agent's tool to control, observe, built itself etc.\n\n## Assistant\n\nI’d start with **this session transcript plus a very small bootstrap spec**.\n\nThe transcript has a useful property that a formal design doc would partly destroy: it contains the *evolution of the idea*, including uncertainty, distinctions we discovered, and the reasons behind them. That makes it a good seed for testing whether the graph can recover and refine understanding from messy human context.\n\nBut I would not use the transcript alone. I’d pair it with a tiny, explicit contract that defines what “iterate” means and what mutations are allowed. Otherwise you risk testing prompt interpretation rather than the architecture.\n\nA good minimalist kickoff would be three files:\n\n```text\n/transcript.md\n/bootstrap.md\n/state.json\n```\n\nWhere `transcript.md` is just this conversation, and `bootstrap.md` says roughly:\n\n```text\nYou are operating a persistent problem graph.\n\nThe graph is the source of durable state.\nDo not rely on previous model conversations.\n\nFor the current runnable node, you may:\n- resolve it\n- decompose it\n- add/remove dependencies\n- create an information-gap node\n- attach evidence\n- record a decision\n- mark it blocked\n- propose code/tool actions\n\nEach iteration must:\n1. inspect the current node and supplied graph context\n2. choose one bounded next action\n3. perform that action\n4. emit structured graph mutations\n5. stop\n\nNever continue implicitly into another iteration.\n```\n\nThat last line matters a lot.\n\nI would make **`iterate` extremely well specified**. Not intellectually elaborate, but operationally precise.\n\nSomething like:\n\n```text\niterate --count 20\n```\n\nshould mean:\n\n```text\nrepeat up to 20 times:\n    select next runnable node\n    construct context projection\n    invoke model\n    validate proposed mutations\n    apply mutations\n    execute permitted tool actions\n    persist state\n    stop early if no runnable nodes remain\n```\n\nI’d avoid “keep working for 20 generations” as the core semantic, because it leaves too much ambiguity around whether one model call may recurse internally.\n\nYou want **one invocation = one graph transition** as much as practical.\n\nFor the architecture, define only the minimum executable boundary:\n\n```text\nGraphStore\nScheduler\nContextBuilder\nAgentRunner\nToolRunner\n```\n\nWith a loop like:\n\n```js\nwhile (iterationsRemaining) {\n  const node = scheduler.next(graph);\n\n  if (!node) break;\n\n  const context = contextBuilder.forNode(node, graph);\n\n  const proposal = await agentRunner.run({\n    node,\n    context,\n    tools\n  });\n\n  const validated = validate(proposal);\n\n  const effects = await toolRunner.execute(validated.actions);\n\n  graph.apply(validated.mutations, effects);\n\n  await graphStore.save(graph);\n}\n```\n\nThe coding agent should be able to inspect and control this machinery itself.\n\nUseful early tools:\n\n```text\ngraph.list\ngraph.get\ngraph.addNode\ngraph.updateNode\ngraph.addEdge\ngraph.resolve\ngraph.block\ngraph.explain\n\nrun.iterate\nrun.status\nrun.history\n\nfs.read\nfs.write\nshell.exec\ntest.run\n```\n\nA useful constraint from day one:\n\n> **The agent may modify the harness code, but not silently modify the rules governing graph mutation or validation.**\n\nThose should be explicit protocol files or schemas.\n\nFor example:\n\n```text\n/protocol/\n  node.schema.json\n  mutation.schema.json\n  iteration.md\n```\n\nThe first experiment can remain pleasantly small:\n\n```text\nSeed:\nthis transcript\n\nRoot:\n\"Turn the ideas in this transcript into a working minimal graph-native coding agent.\"\n\nBudget:\n30–50 iterations\n\nModel:\none strong model initially\n\nGoal:\nproduce and improve its own harness until it can use the harness to work on itself\n```\n\nSo the recommendation is:\n\n> **messy transcript as semantic seed + tiny formal protocol as execution seed.**\n\n---\n\n## User\n\nI'd like the code to be fairly minimalistic by design; node, MangoDB (a file based Mongo, another pet project), sensible dependencies, etc. then it can run anywhere JavaScript can run.\n\n## Assistant\n\nYes. I think that constraint improves the design.\n\nI’d make “can run anywhere JavaScript can run” a first-class architectural rule, which means the core should be almost boring:\n\n```text\nNode\nGraph\nStore\nScheduler\nHarness\n```\n\nwith MangoDB as the default persistence layer, but behind a tiny interface so the graph logic never depends on filesystem details.\n\nSomething like:\n\n```js\nclass Store {\n  async getNode(id) {}\n  async putNode(node) {}\n  async findNodes(query) {}\n  async putEdge(edge) {}\n  async findEdges(query) {}\n}\n```\n\nThen MangoDB implements that, but the harness only knows about `Store`.\n\nThat gives you a very small centre:\n\n```js\nconst node = await scheduler.next(store)\nconst context = await buildContext(node, store)\nconst result = await runAgent(node, context)\nawait applyMutations(result, store)\n```\n\nEverything else can remain optional.\n\nI’d also resist introducing a heavy graph library. The graph is probably simple enough to model as documents:\n\n```js\n{\n  _id: \"node-123\",\n  type: \"task\",\n  objective: \"Implement password reset\",\n  status: \"ready\",\n  parentId: \"node-1\",\n  blockedBy: [\"node-99\"],\n  result: null,\n  metadata: {}\n}\n```\n\nand perhaps edges only where the relationship is richer than `parentId` / `blockedBy`.\n\nA useful rule:\n\n> If a relationship can be represented locally on the node, do that. Introduce explicit edge documents only when you need richer semantics.\n\nSo v1 might only need:\n\n```text\nparentId\nblockedBy[]\nreferences[]\n```\n\nrather than a general graph database abstraction.\n\nKeep the dependency list deliberately small too:\n\n```text\nruntime: Node.js initially\nstorage: MangoDB\nvalidation: maybe Zod or JSON Schema\nLLM: native fetch\nCLI: native process.argv\ntests: node:test\n```\n\nPotentially **zero runtime dependencies apart from MangoDB**.\n\nTo avoid accidental Node lock-in, isolate platform-specific pieces:\n\n```text\n/core\n  node.js\n  graph.js\n  scheduler.js\n  context.js\n  iterate.js\n\n/adapters\n  mango.js\n  openai.js\n  anthropic.js\n  shell.js\n```\n\nThe core should ideally use only ordinary ECMAScript.\n\nThen an agent harness becomes almost a composition:\n\n```js\nconst harness = createHarness({\n  store: mango,\n  model,\n  tools\n})\n\nawait harness.iterate()\n```\n\nThe entire agent's durable mind could literally just be a directory containing small documents.\n\nFor example:\n\n```text\n.agent/\n  nodes/\n  edges/\n  runs/\n  evidence/\n```\n\nNo service. No daemon. No infrastructure.\n\nCopy the directory and you've copied the agent's state.\n\nAvoid initially:\n\n- vector database\n- workflow engine\n- message bus\n- agent framework\n- graph database\n- distributed scheduler\n- embeddings\n- elaborate ontology\n- generic plugin system\n\nFor v0, context could simply be:\n\n```text\ncurrent node\n+ ancestors to root\n+ resolved blockers\n+ direct children\n+ explicitly referenced nodes\n+ transcript.md\n```\n\nThe architecture should ideally be understandable by reading **five or six small JS files**.\n\nIf the concept is strong, it shouldn't need much machinery around it.\n\n---\n\n## User\n\nWould you like to name the project?\n\n## Assistant\n\nYes. **Arbor**.\n\nIt feels right for what we've arrived at:\n\n- The task begins as a root.\n- It branches as understanding develops.\n- Leaves are where concrete work happens.\n- Results flow back through the structure.\n- Some branches stop growing because the environment can't support them yet.\n- The persistent structure matters more than any individual agent working on it.\n\nAnd technically, *arbor* means a tree/tree-like structure, while the implementation can quietly be a DAG rather than pretending everything is strictly hierarchical.\n\nIt also sits nicely alongside **Harbour** without sounding like a Harbour sub-feature:\n\n> Harbour orchestrates work.  \n> Arbor grows solutions.\n\nI'd call the repository simply:\n\n```text\narbor\n```\n\nand the first command:\n\n```bash\narbor iterate 50\n```\n\nThere is something rather satisfying about giving Arbor this transcript and essentially saying **\"grow.\"**\n\nA few runners-up I like are **Grove**, **Bough**, **Ramify**, and **Trellis**.\n\nBut **Arbor** is the one I'd pick.\n\n---\n\n## User\n\nI feel like that might get confused with Harbour, with the u. Are there any simpler/friendlier suggestions?\n\n## Assistant\n\nAgreed. **Harbour / Arbor** is exactly the kind of pair that seems charming until you're saying them aloud or typing repo names all day.\n\nI’d lean toward names that describe the *behaviour* without sounding technical.\n\nA few I particularly like:\n\n- **Twig** — probably my favourite. Tiny, friendly, graph/tree association, and fits the deliberately minimal implementation.\n- **Sprout** — the initial node grows into whatever structure is necessary.\n- **Branch** — extremely clear and wonderfully literal.\n- **Grove** — calm and memorable.\n- **Bud** — charmingly minimal: a node contains the potential to expand or resolve.\n- **Nod** — derived loosely from *node*.\n- **Grow** — a verb-first project name.\n- **Seed** — `transcript.md` is quite literally the seed from which the solution graph develops.\n\n**Twig** keeps jumping out at me.\n\nThere’s a pleasing correspondence:\n\n```text\ntwig/\n  node.js\n  graph.js\n  context.js\n  iterate.js\n```\n\n```bash\ntwig iterate 50\ntwig status\ntwig inspect <node>\n```\n\nAnd the philosophy almost writes itself:\n\n> **Twig is a tiny agent harness where context grows as a graph, not a conversation.**\n\n---\n\n## User\n\n\"tiny agent graph harness\" is cute, I wonder if there's a nice acronym\n\n## Assistant\n\n**TAG**.\n\n**T**iny **A**gent **G**raph.\n\nI like it more than trying to force “harness” into the acronym. It is short, friendly, technical without sounding like an AI product.\n\n```bash\ntag iterate 50\ntag status\ntag inspect <node>\ntag graph\n```\n\nAnd the description remains:\n\n> **TAG is a tiny agent graph harness.**\n\nA few other constructions work, but feel more forced:\n\n- **TANG** — Tiny Agent Node Graph\n- **TANGLE** — Tiny Agent Node Graph + Lightweight Execution\n- **NAG** — Node Agent Graph\n- **TIG** — Tiny Intelligence Graph\n\nBut for the philosophy we've been converging on — *as little machinery as possible* — I’d choose **TAG**.\n\n`tag iterate 50` feels exactly like the program we're describing.\n\n---\n\n## User\n\nI like Tag, with the tagline Tiny Agent Node Graph & Lightweight Executor. What license would you like?\n\n## Assistant\n\nI have an opinionated answer for TAG.\n\nI’d pick a **very permissive licence**. The project feels like a small primitive intended to be embedded, forked, experimented with, and run almost anywhere.\n\nMy preference would be **MIT-0** for maximum frictionlessness, with **Blue Oak Model License 1.0.0** as an attractive modern alternative because of its clearer language and explicit patent grant.\n\nThe philosophy should remain separate from the licence itself.\n\nA small project-level statement could be:\n\n```text\nTAG — Tiny Agent Node Graph & Lightweight Executor\n\nSmall enough to understand in an afternoon.\nPortable enough to run anywhere JavaScript runs.\nState lives in the graph, not the conversation.\n```\n\nA pleasant bootstrap layout might eventually look like:\n\n```text\ntag.md          # Seed + protocol\ntranscript.md   # Human conversation\ngraph/          # MangoDB documents\n```\n\nwith the first command:\n\n```bash\ntag iterate\n```\n\nThe seed provides the initial understanding; the graph becomes the durable state.\n\n",
+      "status": "ready",
+      "blockedBy": [],
+      "references": [],
+      "evidence": [
+        {
+          "text": "The bootstrap already supports graph-derived context, dependency scheduling, explicit parent synthesis, scoped mutation validation, revision checks, and journaled bounded iteration. The CLI loads bootstrap.md for model invocations. MangoDB stores graph state and history together behind a writer lock. These are source observations, not runtime verification.",
+          "source": "core/graph.js:74-128,131-210; core/iterate.js:3-30; cli.js:79-85; adapters/mango.js:6-51",
+          "generation": 1
+        },
+        {
+          "text": "Context currently includes whole selected nodes and rejects projections exceeding 64000 characters. Status reports explicit blocked states but does not explain ready nodes waiting on dependencies or children. Tool proposals are recorded and require host action rather than executing model commands.",
+          "source": "core/graph.js:96-128,192-198; cli.js:51-57; core/protocol.js:24",
+          "generation": 1
+        }
+      ],
+      "decisions": [],
+      "actions": [],
+      "result": null,
+      "reason": null,
+      "attempts": 1
+    },
+    {
+      "id": "bounded-context",
+      "objective": "Make graph context selection bounded and recoverable as evidence grows.",
+      "parentId": "root",
+      "type": "task",
+      "context": "Design and implement a minimal deterministic projection policy preserving current objectives, prerequisite outcomes, provenance and relevant ancestor decisions. Avoid repeating unbounded ancestor transcript material; make omissions explicit without inventing summaries. Cover oversized current nodes and ancestor evidence with targeted existing-runner tests. Any mutation-rule changes require an explicit protocol version change.",
+      "status": "resolved",
+      "blockedBy": [],
+      "references": [],
+      "evidence": [
+        {
+          "text": "Host ran npm test: 11 tests passed, including oversized seed/current-node evidence, deterministic projection, wide-neighbour omission counts, and preservation of full durable state. TAG context now successfully projects this development graph with explicit transcript truncation.",
+          "source": "npm test and node cli.js context, generation 2 host verification",
+          "generation": 2
+        }
+      ],
+      "decisions": [
+        {
+          "text": "Use literal prefixes, recent evidence records, and explicit omission counts instead of fabricated summaries. Default serialized projection budget is 32000 characters; callers can configure budgets of at least 8000. Full graph nodes remain available through inspect. No mutation protocol rule changed.",
+          "source": "core/graph.js:buildContext",
+          "generation": 2
+        }
+      ],
+      "actions": [],
+      "result": "Bounded graph-derived context implemented and verified without losing stored evidence or passing previous worker conversations.",
+      "reason": null,
+      "attempts": 1
+    },
+    {
+      "id": "frontier-explanations",
+      "objective": "Explain why unresolved nodes cannot run.",
+      "parentId": "root",
+      "type": "task",
+      "context": "Add concise CLI diagnostics distinguishing explicit human blocks, unresolved prerequisites and unfinished children. Include failed or partially resolved prerequisites that cannot satisfy a dependency. Preserve existing scheduling and explicit upward synthesis; validate diagnostics with targeted tests using the existing runner.",
+      "status": "ready",
+      "blockedBy": [],
+      "references": [],
+      "evidence": [],
+      "decisions": [],
+      "actions": [],
+      "result": null,
+      "reason": null,
+      "attempts": 0
+    },
+    {
+      "id": "dogfood-configuration",
+      "objective": "Obtain an authorized execution configuration for further empirical autonomous dogfooding.",
+      "parentId": "root",
+      "type": "question",
+      "context": "The supplied projection contains no approved model/provider or external-worker arrangement, run budget, or host-action permissions. Request a model endpoint and model identifier or an approved external-worker mechanism, generation/cost limits, and permitted repository actions. Credentials must be configured outside graph records.",
+      "status": "resolved",
+      "blockedBy": [],
+      "references": [],
+      "evidence": [
+        {
+          "text": "The current user explicitly authorizes building, testing, inspecting and modifying TAG, using TAG for its own development, for up to 30 generations. The current coding-agent session is the authorized external host; fresh workers can receive TAG context using its CLI. No external provider or additional paid API calls are authorized or necessary for this run. This records the existing user instruction, not a new approval.",
+          "source": "human",
+          "generation": 1
+        }
+      ],
+      "decisions": [],
+      "actions": [],
+      "result": "The current user explicitly authorizes building, testing, inspecting and modifying TAG, using TAG for its own development, for up to 30 generations. The current coding-agent session is the authorized external host; fresh workers can receive TAG context using its CLI. No external provider or additional paid API calls are authorized or necessary for this run. This records the existing user instruction, not a new approval.",
+      "reason": null,
+      "attempts": 0
+    },
+    {
+      "id": "empirical-dogfood",
+      "objective": "Evaluate continuity across fresh workers using only persisted graph projections.",
+      "parentId": "root",
+      "type": "task",
+      "context": "After authorization, run a bounded real experiment with one proposal per invocation and no prior worker conversations. Record actual revisions, outcomes, rejections, context sizes and unresolved information gaps as evidence. Have a fresh worker reconstruct established facts and next steps from the graph. Distinguish observations from hypotheses; never substitute mocked results for live evidence.",
+      "status": "ready",
+      "blockedBy": [
+        "dogfood-configuration"
+      ],
+      "references": [],
+      "evidence": [],
+      "decisions": [],
+      "actions": [],
+      "result": null,
+      "reason": null,
+      "attempts": 0
+    }
+  ],
+  "history": [
+    {
+      "generation": 1,
+      "revision": 1,
+      "nodeId": "root",
+      "outcome": "applied",
+      "proposal": {
+        "revision": 0,
+        "nodeId": "root",
+        "protocolVersion": 1,
+        "summary": "Decompose the root into two focused improvements and an empirical dogfood branch gated by missing human configuration. Inspected source and read TAG context; no tests run or implementation files modified.",
+        "mutations": [
+          {
+            "op": "evidence",
+            "id": "root",
+            "text": "The bootstrap already supports graph-derived context, dependency scheduling, explicit parent synthesis, scoped mutation validation, revision checks, and journaled bounded iteration. The CLI loads bootstrap.md for model invocations. MangoDB stores graph state and history together behind a writer lock. These are source observations, not runtime verification.",
+            "source": "core/graph.js:74-128,131-210; core/iterate.js:3-30; cli.js:79-85; adapters/mango.js:6-51"
+          },
+          {
+            "op": "evidence",
+            "id": "root",
+            "text": "Context currently includes whole selected nodes and rejects projections exceeding 64000 characters. Status reports explicit blocked states but does not explain ready nodes waiting on dependencies or children. Tool proposals are recorded and require host action rather than executing model commands.",
+            "source": "core/graph.js:96-128,192-198; cli.js:51-57; core/protocol.js:24"
+          },
+          {
+            "op": "add",
+            "id": "bounded-context",
+            "parentId": "root",
+            "type": "task",
+            "objective": "Make graph context selection bounded and recoverable as evidence grows.",
+            "context": "Design and implement a minimal deterministic projection policy preserving current objectives, prerequisite outcomes, provenance and relevant ancestor decisions. Avoid repeating unbounded ancestor transcript material; make omissions explicit without inventing summaries. Cover oversized current nodes and ancestor evidence with targeted existing-runner tests. Any mutation-rule changes require an explicit protocol version change."
+          },
+          {
+            "op": "add",
+            "id": "frontier-explanations",
+            "parentId": "root",
+            "type": "task",
+            "objective": "Explain why unresolved nodes cannot run.",
+            "context": "Add concise CLI diagnostics distinguishing explicit human blocks, unresolved prerequisites and unfinished children. Include failed or partially resolved prerequisites that cannot satisfy a dependency. Preserve existing scheduling and explicit upward synthesis; validate diagnostics with targeted tests using the existing runner."
+          },
+          {
+            "op": "add",
+            "id": "dogfood-configuration",
+            "parentId": "root",
+            "type": "question",
+            "objective": "Obtain an authorized execution configuration for further empirical autonomous dogfooding.",
+            "context": "The supplied projection contains no approved model/provider or external-worker arrangement, run budget, or host-action permissions. Request a model endpoint and model identifier or an approved external-worker mechanism, generation/cost limits, and permitted repository actions. Credentials must be configured outside graph records."
+          },
+          {
+            "op": "block",
+            "id": "dogfood-configuration",
+            "human": true,
+            "reason": "Further live autonomous execution requires human-selected execution configuration and budget not supplied in the graph. Independent implementation planning remains runnable."
+          },
+          {
+            "op": "add",
+            "id": "empirical-dogfood",
+            "parentId": "root",
+            "type": "task",
+            "objective": "Evaluate continuity across fresh workers using only persisted graph projections.",
+            "context": "After authorization, run a bounded real experiment with one proposal per invocation and no prior worker conversations. Record actual revisions, outcomes, rejections, context sizes and unresolved information gaps as evidence. Have a fresh worker reconstruct established facts and next steps from the graph. Distinguish observations from hypotheses; never substitute mocked results for live evidence."
+          },
+          {
+            "op": "depend",
+            "id": "empirical-dogfood",
+            "on": "dogfood-configuration"
+          }
+        ]
+      }
+    },
+    {
+      "revision": 2,
+      "nodeId": "dogfood-configuration",
+      "outcome": "answered",
+      "message": "The current user explicitly authorizes building, testing, inspecting and modifying TAG, using TAG for its own development, for up to 30 generations. The current coding-agent session is the authorized external host; fresh workers can receive TAG context using its CLI. No external provider or additional paid API calls are authorized or necessary for this run. This records the existing user instruction, not a new approval."
+    },
+    {
+      "generation": 2,
+      "revision": 3,
+      "nodeId": "bounded-context",
+      "outcome": "applied",
+      "proposal": {
+        "protocolVersion": 1,
+        "revision": 2,
+        "nodeId": "bounded-context",
+        "summary": "Implement deterministic bounded context projection with explicit omissions and durable full evidence.",
+        "mutations": [
+          {
+            "op": "decision",
+            "id": "bounded-context",
+            "text": "Use literal prefixes, recent evidence records, and explicit omission counts instead of fabricated summaries. Default serialized projection budget is 32000 characters; callers can configure budgets of at least 8000. Full graph nodes remain available through inspect. No mutation protocol rule changed.",
+            "source": "core/graph.js:buildContext"
+          },
+          {
+            "op": "evidence",
+            "id": "bounded-context",
+            "text": "Host ran npm test: 11 tests passed, including oversized seed/current-node evidence, deterministic projection, wide-neighbour omission counts, and preservation of full durable state. TAG context now successfully projects this development graph with explicit transcript truncation.",
+            "source": "npm test and node cli.js context, generation 2 host verification"
+          },
+          {
+            "op": "resolve",
+            "id": "bounded-context",
+            "result": "Bounded graph-derived context implemented and verified without losing stored evidence or passing previous worker conversations."
+          }
+        ]
+      }
+    }
+  ]
+}

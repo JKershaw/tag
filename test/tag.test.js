@@ -69,6 +69,34 @@ test('context is graph-derived, detached and excludes invocation history', () =>
   assert.equal(graph.nodes[1].objective, 'a');
 });
 
+test('large context is bounded with explicit omissions and full durable evidence retained', () => {
+  let graph = seed('Build', 'S'.repeat(100000));
+  graph = applyProposal(graph, proposal(graph, [
+    add('child'),
+    ...Array.from({ length: 20 }, (_, index) => ({
+      op: 'evidence', id: 'child', text: `${index}: ${'E'.repeat(10000)}`, source: 'test',
+    })),
+  ]));
+  const context = buildContext(graph, 'child', { maxCharacters: 8000 });
+  assert.ok(JSON.stringify(context).length <= 8000);
+  assert.ok(context.node.omitted.evidence.items > 0);
+  assert.ok(context.related[0].omitted.context.characters > 0);
+  assert.equal(graph.nodes[0].context.length, 100000);
+  assert.equal(graph.nodes[1].evidence.length, 20);
+  assert.ok(context.node.evidence.at(-1).text.startsWith('19:'));
+  assert.deepEqual(buildContext(graph, 'child', { maxCharacters: 8000 }), context);
+  assert.throws(() => buildContext(graph, 'child', { maxCharacters: 1 }), /budget/);
+});
+
+test('wide context reports omitted neighbours without including invocation history', () => {
+  const graph = applyProposal(seed('Build'), proposal(seed('Build'), Array.from({ length: 50 }, (_, i) => add(`child-${i}`))));
+  const context = buildContext(graph, 'root');
+  assert.equal(context.related.length, 32);
+  assert.equal(context.projection.omittedRelated, 18);
+  assert.equal(context.node.objective, 'Build');
+  assert.equal(context.history, undefined);
+});
+
 test('tool requests stop for explicit approval rather than execute code', () => {
   let graph = seed('Build');
   graph = applyProposal(graph, proposal(graph, [

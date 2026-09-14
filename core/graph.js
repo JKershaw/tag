@@ -103,7 +103,9 @@ export function nextNode(graph) {
   return runnable(graph).sort((a, b) => a.attempts - b.attempts)[0] ?? null;
 }
 
-export function buildContext(graph, nodeId = nextNode(graph)?.id) {
+export function buildContext(graph, nodeId = nextNode(graph)?.id, { maxCharacters = 32000 } = {}) {
+  validateGraph(graph);
+  assert(Number.isSafeInteger(maxCharacters) && maxCharacters >= 8000, 'Context budget must be at least 8000 characters');
   const current = graph.nodes.find(node => node.id === nodeId);
   assert(current, 'No current node');
   const included = new Set([current.id]);
@@ -118,14 +120,58 @@ export function buildContext(graph, nodeId = nextNode(graph)?.id) {
       included.add(node.id);
     }
   }
-  const context = {
-    protocolVersion: protocol.version, revision: graph.revision, generation: graph.generation,
-    nodeId: current.id, node: current,
-    related: graph.nodes.filter(node => node.id !== current.id && included.has(node.id)),
-    protocol,
-  };
-  assert(JSON.stringify(context).length <= 64000, 'Context exceeds 64000 characters; summarize graph evidence before continuing');
-  return structuredClone(context);
+  const related = [...included].filter(target => target !== current.id)
+    .map(target => graph.nodes.find(node => node.id === target));
+  let textLimit = 2000;
+  let itemLimit = 8;
+  let nodeLimit = 32;
+  function project(node) {
+    const copy = structuredClone(node);
+    const omitted = {};
+    function clip(value, field) {
+      if (typeof value !== 'string' || value.length <= textLimit) return value;
+      omitted[field] = { characters: value.length - textLimit };
+      return value.slice(0, textLimit);
+    }
+    for (const field of ['objective', 'context', 'result', 'reason']) copy[field] = clip(copy[field], field);
+    for (const field of ['blockedBy', 'references', 'evidence', 'decisions', 'actions']) {
+      if (copy[field].length > itemLimit) omitted[field] = { items: copy[field].length - itemLimit };
+      // Keep recent observations, but preserve stable order for relationship IDs.
+      copy[field] = ['blockedBy', 'references'].includes(field)
+        ? copy[field].slice(0, itemLimit) : copy[field].slice(-itemLimit);
+      if (['blockedBy', 'references'].includes(field)) continue;
+      copy[field] = copy[field].map((record, index) => {
+        const entry = {};
+        for (const [key, value] of Object.entries(record)) {
+          if (key === 'input') {
+            const json = JSON.stringify(value);
+            entry.input = json.length > textLimit
+              ? { jsonPreview: clip(json, `${field}[${index}].input`) } : value;
+          } else {
+            entry[key] = clip(value, `${field}[${index}].${key}`);
+          }
+        }
+        return entry;
+      });
+    }
+    return { ...copy, omitted };
+  }
+  while (true) {
+    const context = {
+      protocolVersion: protocol.version, revision: graph.revision, generation: graph.generation,
+      nodeId: current.id, node: project(current), related: related.slice(0, nodeLimit).map(project),
+      projection: {
+        maxCharacters, omittedRelated: Math.max(0, related.length - nodeLimit),
+        note: 'Clipped fields are prefixes, not summaries. Omitted counts are explicit; inspect full nodes before relying on missing evidence.',
+      },
+      protocol,
+    };
+    if (JSON.stringify(context).length <= maxCharacters) return context;
+    if (textLimit > 128) textLimit = Math.max(128, Math.floor(textLimit / 2));
+    else if (itemLimit > 1) itemLimit = Math.floor(itemLimit / 2);
+    else if (nodeLimit > 0) nodeLimit = Math.floor(nodeLimit / 2);
+    else throw new Error('Required context exceeds budget; inspect the current node');
+  }
 }
 
 export function applyProposal(graph, proposal) {
