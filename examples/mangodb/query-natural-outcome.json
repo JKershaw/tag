@@ -1,0 +1,27 @@
+{
+  "status": "failed",
+  "result": "Execution stopped: malformed_response. No complete root synthesis is available.",
+  "evidence": [],
+  "blockers": [
+    {
+      "id": "root",
+      "status": "ready",
+      "terminal": false,
+      "runnable": true,
+      "reason": null,
+      "prerequisites": [],
+      "children": []
+    }
+  ],
+  "usage": {
+    "generations": 1,
+    "promptTokens": 0,
+    "completionTokens": 0,
+    "totalTokens": 0,
+    "knownCostUsd": 0,
+    "costUsd": null,
+    "accountingComplete": false,
+    "reservedCostUsd": 0.0041442
+  },
+  "stoppingReason": "malformed_response"
+}
