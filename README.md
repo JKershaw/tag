@@ -246,6 +246,37 @@ Legacy stopping reasons such as `malformed_response` remain compatible.
 No raw prompt/completion payloads are added to the audit; accepted graph mutations
 and the existing caller-supplied task remain normal graph state.
 
+#### Controlled lifecycle diagnostic attempt (2026-09-15)
+
+After all **124 offline tests passed**, CodeQL reported zero alerts and an
+independent read-only review found no significant issues (the built-in review
+binary was unavailable). Exactly one new dispatch used the unchanged
+`examples/mangodb/lifecycle-task.json`, `deepseek/deepseek-v4.1-flash`, no provider
+pin, and the existing two-generation/$0.03/zero-retry fixture limits.
+No query or snapshot fixture was dispatched, and no fallback was attempted.
+
+The isolated store is `/tmp/tag-lifecycle-diagnostics-QiDwpS/lifecycle`.
+The persisted outcome and graph are exported as
+`examples/mangodb/lifecycle-diagnostics-outcome.json` and
+`examples/mangodb/lifecycle-diagnostics-graph.json`. The task SHA-256 before and
+after was `005bd9c2f909916e611dacb6777414152a20938ce8dba9ff04c40ea255a7f23c`.
+
+The single inference request was rejected with **HTTP 429**: terminal root
+`failed`, stopping reason `rate_limited`, stage `http_status`, failure kind
+`http_error_status`, elapsed **768.56941 ms**. The response body was deliberately
+not read: byte count, JSON type and body hash are unknown; the configured size
+limit remained 2,097,152 bytes. Actual model/provider, token usage and
+provider-reported cost were not established. There was no valid proposal,
+decomposition, evidence, tool action or model-applied mutation; the one-node graph
+only records executor rejection and stopping (generation 1, revision 3).
+
+The $0.0041424 reservation was released in full under the existing explicit-429
+unbilled-rejection rule: reconciled cost $0, outstanding reservation $0,
+accounting complete. These ledger zeros are **not provider-reported usage**.
+No further inference was sent. The previous attempt's unknown charge and retained
+reservation were not modified; neither this 429 nor the earlier 30.017-second
+duration establishes the cause of that earlier `malformed_response`.
+
 No model output is executed as shell commands or file writes. Validated graph
 mutations are the only automatic effects; tool proposals require human review.
 `tag iterate` and the old unbudgeted HTTP adapter have been retired rather than
