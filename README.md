@@ -471,6 +471,61 @@ without changing spending limits or other safety controls. Then a separately
 authorized continuation can verify a free completion and replay the three
 unchanged fixtures once each in fresh stores. No Harbour integration was added.
 
+### Budget-reserved DeepSeek experiment (2026-09-15)
+
+Paid eligibility and reconciliation are implemented; **the live three-fixture
+milestone remains incomplete because the first request lacked reliable accounting.**
+All **103 tests passed** before inference, including the three real MangoDB host
+checks and focused reservation, exact-fit/rejection, current-price revocation,
+usage reconciliation, overrun, unknown accounting and durable reopen tests.
+CodeQL found zero alerts. The separate read-only code reviewer found no significant
+issues; the automated review binary was unavailable.
+
+The live catalogue at `2026-09-15T06:22:27.311Z` verified
+`deepseek/deepseek-v4.1-flash` as `known_priced`: base/worst-case **$0.30/M input
+tokens, $1.20/M output tokens**, and $0.006/M cache-read tokens. Advertised
+scheduled discounts are $0.15/M input, $0.60/M output and $0.003/M cache reads.
+Reservations use the maxima, not discounts. The full verified schedule is
+preserved in `examples/mangodb/lifecycle-deepseek-graph.json`.
+
+The lifecycle fixture was sent **once**, in a fresh store
+`/tmp/tag-mangodb-deepseek-eoGzgD/lifecycle`, with all original limits unchanged:
+$0.03 per fixture/$0.09 experiment, concurrency one, zero retries, two generations,
+1536 output tokens, 3000 ms spacing and three nodes. Its exact message estimate
+was **7664 input tokens + 1536 maximum output tokens**, reserving **$0.0041424**
+durably before inference. No automatic backend fallback or model switch was allowed.
+
+| Fixture | Outcome | Generations / inference attempts | Actual tokens / cost | Graph / decomposition |
+| --- | --- | --- | --- | --- |
+| Lifecycle | Failed: `malformed_response` | 1 / 1 | Unknown / unknown; $0.0041424 remains reserved | 1 node, 7007 compact JSON bytes; no children |
+| Query | Not attempted: experiment safety stop | 0 / 0 | No request; 0 / $0 | No new graph/store |
+| Snapshot | Not attempted: experiment safety stop | 0 / 0 | No request; 0 / $0 | No new graph/store |
+
+The lifecycle response could not be read/decoded into usable provider accounting.
+Its attempt lasted 30,017 ms; the sanitized failure does **not** establish the
+underlying cause. Actual model/provider and input/output token counts are
+**unknown**, not the requested model or zero. There is no synthesized model
+result. The ledger's zero token/known-cost counters mean no validated usage was
+received; `costUsd: null` and `accountingComplete: false` are authoritative.
+No reservation was released. In accordance with the operator's stop condition,
+**no further inference was sent**, including query and snapshot; they are not
+reported as completed replays.
+
+Independent host tests support the fixture observations: lifecycle reopened
+`a.count=5`, absent `b`, one document (`test/mangodb-tasks.test.js:11–33`);
+query returned exactly `b:9` then `d:7` with the requested projection (lines 35–57);
+snapshot preserved the complete graph and opaque `$oid`/`$date` input with its
+action still merely proposed (lines 59–86). These are host results, **not**
+model findings, and do not establish general compatibility.
+
+Exact CLI outcome and reopened graph are retained as
+`examples/mangodb/lifecycle-deepseek-{outcome,graph}.json`; the consolidated
+`examples/mangodb/deepseek-experiment.json` records both unattempted fixtures and
+matching before/after input hashes. Earlier artifacts and objectives are untouched.
+The operator-described $1/day provider key cap was neither changed nor used as
+local accounting. No extra task, retry, fallback, Harbour integration, or
+model-generated shell/file execution was performed.
+
 ## Graph rules and human boundaries
 
 - A ready node runs only when its prerequisites are **resolved** and all its
