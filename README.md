@@ -81,13 +81,15 @@ node cli.js view --html --store .tag/improve-tag-live > .tag/improve-tag-live.ht
 Open `.tag/improve-tag-live.html`. Substitute your own objective in the `plan`
 command to ask for a different improvement to this TAG checkout.
 Fresh planning reads a fixed, bounded selection of local TAG sources, with line
-numbers, content hashes, and explicit clipping, then asks the existing OpenRouter
-adapter to analyse those excerpts and produce one research-backed decomposition.
+numbers, content hashes, and explicit clipping, plus a cheap file-name-only
+module map of `core/`, `adapters/`, and `test/` so the model can see what already
+exists before it proposes more. It then asks the existing OpenRouter adapter to
+analyse those excerpts and produce one research-backed decomposition.
 It does **not** crawl arbitrary files, read environment files, search the web,
 run tools/tests, or independently verify model claims. Review `research` before
-using it on a checkout containing private modifications: those excerpts are sent
-to your selected provider. Missing information should appear as questions rather
-than invented findings.
+using it on a checkout containing private modifications: those excerpts and file
+names are sent to your selected provider. Missing information should appear as
+questions rather than invented findings.
 
 Planning permits **at most one inference attempt, no retries**, up to 2,048 output
 tokens, 25 nodes, and the existing $0.10 local budget ceiling and pricing checks.

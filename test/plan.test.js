@@ -18,12 +18,15 @@ const execute = promisify(execFile);
 test('research is bounded, labelled, source-grounded and retained in planning projections', async () => {
   const context = await researchContext();
   assert.ok(context.length > 2000 && context.length <= 16000);
-  for (const source of ['package.json:1-', 'bootstrap.md:1-', 'core/graph.js:96-', 'cli.js:1-']) {
+  for (const source of ['README.md:1-', 'transcript.md:1-', 'bootstrap.md:1-', 'core/graph.js:96-', 'cli.js:1-']) {
     assert.ok(context.includes(source));
   }
   assert.match(context, /sha256 [a-f0-9]{64}/);
   assert.match(context, /not a full repository audit/);
   assert.match(context, /excerpt clipped/);
+  assert.match(context, /Repository module map/);
+  assert.match(context, /adapters\/: .*openrouter\.js/);
+  assert.match(context, /test\/: .*plan\.test\.js/);
   const graph = seed('Improve TAG', context);
   assert.equal(buildContext(graph).node.context.length, 2000);
   const projection = buildContext(graph, 'root', { maxTextCharacters: 16000 });
