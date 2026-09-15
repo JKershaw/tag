@@ -223,6 +223,29 @@ Each attempt retains `requestedModel`/`requestedProvider` separately from
 usage. HTTP 404 is recorded as `provider_unavailable`, without retry or an
 assumption of zero cost.
 
+Each inference attempt also persists content-free `diagnostics`: `stage`,
+`failureKind`, HTTP status, monotonic `elapsedMs` (request through adapter
+validation), the 30-second deadline and 2 MiB response limit, bytes actually read,
+whether the body was completely read, its SHA-256 when complete, and the parsed
+top-level JSON type. Missing measurements are `null`; partial byte counts are
+not the full response size. HTTP error bodies are not read. Exception names and
+underlying network codes are allowlisted classifications, never messages, stacks,
+URLs, credentials, or arbitrary headers. Returned identities are bounded and
+syntax-filtered; validated usage and reported numeric cost remain separate.
+
+Inspect `diagnostics.failureKind` alongside the existing stopping reason:
+`request_network_failure`, `request_timeout`, `http_error_status`,
+`body_read_failure`, `body_read_timeout`, `response_size_limit`,
+`utf8_decode_failure`, `json_parse_failure`, `unexpected_json_type`,
+`accounting_validation_failure`, `identity_validation_failure`, or
+`proposal_validation_failure`. `stage` distinguishes proposal JSON parsing from
+graph/protocol validation. A timeout requires explicit timeout exception/code or
+an expired request signal: **elapsed time near 30 seconds is not a diagnosis**.
+Legacy stopping reasons such as `malformed_response` remain compatible.
+`validProposal` becomes true only when graph validation and application succeed.
+No raw prompt/completion payloads are added to the audit; accepted graph mutations
+and the existing caller-supplied task remain normal graph state.
+
 No model output is executed as shell commands or file writes. Validated graph
 mutations are the only automatic effects; tool proposals require human review.
 `tag iterate` and the old unbudgeted HTTP adapter have been retired rather than

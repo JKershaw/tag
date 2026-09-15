@@ -147,6 +147,7 @@ export async function dispatchRun(task, { store, provider, wait = sleep, now = (
       actualProvider: response.provider ?? null,
       reportedCostUsd: response.reportedCostUsd ?? response.usage?.costUsd ?? null,
       usage: response.usage ?? null, error: response.error ?? null, httpStatus: response.httpStatus ?? null,
+      diagnostics: structuredClone(response.diagnostics ?? null), validProposal: false,
     });
     const usage = updated.run.usage;
     if (response.usage && (!['promptTokens', 'completionTokens', 'totalTokens'].every(
@@ -155,6 +156,11 @@ export async function dispatchRun(task, { store, provider, wait = sleep, now = (
       || !Number.isFinite(response.usage.costUsd) || response.usage.costUsd < 0)) {
       response.usage = null;
       response.error = 'usage_unavailable';
+      attempt.usage = null;
+      attempt.error = response.error;
+      if (attempt.diagnostics) Object.assign(attempt.diagnostics, {
+        stage: 'usage_validation', failureKind: 'accounting_validation_failure',
+      });
     }
     if (response.usage) {
       usage.promptTokens += response.usage.promptTokens;
@@ -191,11 +197,16 @@ export async function dispatchRun(task, { store, provider, wait = sleep, now = (
           else {
             updated = applied;
             updated.run.attempts.at(-1).status = 'applied';
+            updated.run.attempts.at(-1).validProposal = true;
+            if (updated.run.attempts.at(-1).diagnostics) updated.run.attempts.at(-1).diagnostics.stage = 'complete';
           }
         }
       } catch {
         reason = 'invalid_proposal';
       }
+      if (reason && attempt.diagnostics) Object.assign(attempt.diagnostics, {
+        stage: 'proposal_validation', failureKind: 'proposal_validation_failure',
+      });
     }
     if (reason) {
       updated.revision++;

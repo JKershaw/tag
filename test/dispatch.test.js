@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { createHash } from 'node:crypto';
 import { dispatchRun, executionLimits } from '../core/dispatch.js';
 import { createProvider, allowedModels, allowedProviders } from '../adapters/openrouter.js';
 import { openStore } from '../adapters/mango.js';
@@ -610,6 +611,187 @@ test('malformed JSON, absent/invalid usage and truncated outputs fail closed', a
     assert.equal(h.calls(), 1);
     assert.equal(h.graph().nodes[0].status, 'failed');
   }
+});
+
+test('inference diagnostics distinguish content-free failure stages and preserve uncertain paid reservations', async t => {
+  const privateText = 'private prompt completion credential header exception details';
+  const brokenBody = error => new Response(new ReadableStream({
+    start(controller) { controller.enqueue(new Uint8Array([123])); },
+    pull(controller) { controller.error(error); },
+    cancel() { throw new Error(privateText); },
+  }));
+  const cases = [
+    ['network', () => { throw new TypeError(privateText, { cause: { code: 'ECONNRESET' } }); },
+      'request', 'request_network_failure', null, null, null, 'TypeError', 'ECONNRESET'],
+    ['request timeout', () => { throw new DOMException(privateText, 'TimeoutError'); },
+      'request', 'request_timeout', null, null, null, 'TimeoutError', null],
+    ['abort is not necessarily timeout', () => { throw new DOMException(privateText, 'AbortError'); },
+      'request', 'request_network_failure', null, null, null, 'AbortError', null],
+    ['HTTP', () => response({ error: privateText }, 502, { 'x-private': privateText }),
+      'http_status', 'http_error_status', 502, null, null, null, null],
+    ['missing body', () => new Response(null),
+      'body_read', 'body_read_failure', 200, null, null, 'Error', null],
+    ['body stream', () => brokenBody(new TypeError(privateText)),
+      'body_read', 'body_read_failure', 200, 1, null, 'TypeError', null],
+    ['body timeout', () => brokenBody(new DOMException(privateText, 'TimeoutError')),
+      'body_read', 'body_read_timeout', 200, 1, null, 'TimeoutError', null],
+    ['size', () => new Response(new Uint8Array(2 * 1024 * 1024 + 1)),
+      'body_read', 'response_size_limit', 200, 2 * 1024 * 1024 + 1, null, 'Error', null],
+    ['UTF-8', () => new Response(new Uint8Array([0xc3, 0x28])),
+      'text_decode', 'utf8_decode_failure', 200, 2, null, 'TypeError', 'ERR_ENCODING_INVALID_ENCODED_DATA'],
+    ['JSON', () => new Response('{'),
+      'json_parse', 'json_parse_failure', 200, 1, null, 'SyntaxError', null],
+    ...[null, [], 'private', 42, true].map(value => [
+      `JSON type ${JSON.stringify(value)}`, () => response(value),
+      'json_type', 'unexpected_json_type', 200, Buffer.byteLength(JSON.stringify(value)),
+      value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value, null, null,
+    ]),
+    ['unknown exception', () => { throw { name: privateText, code: privateText, message: privateText }; },
+      'request', 'request_network_failure', null, null, null, 'OtherError', null],
+  ];
+  for (const [name, handler, stage, kind, status, bytes, type, errorClass, code] of cases) {
+    await t.test(name, async () => {
+      const h = paidHarness(handler);
+      const outcome = await h.run();
+      const attempt = h.graph().run.attempts[0];
+      const d = attempt.diagnostics;
+      assert.equal(d.stage, stage);
+      assert.equal(d.failureKind, kind);
+      assert.equal(d.httpStatus, status);
+      assert.equal(attempt.httpStatus, status);
+      assert.equal(d.responseBytes, bytes);
+      assert.equal(d.topLevelJsonType, type);
+      assert.equal(d.exceptionClass, errorClass);
+      assert.equal(d.exceptionCode, code);
+      assert.equal(d.timeoutMs, 30000);
+      assert.equal(d.responseSizeLimitBytes, 2 * 1024 * 1024);
+      assert.ok(Number.isFinite(d.elapsedMs) && d.elapsedMs >= 0);
+      assert.equal(d.bodyComplete, ['text_decode', 'json_parse', 'json_type'].includes(stage));
+      if (d.bodyComplete) assert.match(d.responseSha256, /^[a-f0-9]{64}$/);
+      else assert.equal(d.responseSha256, null);
+      assert.equal(outcome.usage.accountingComplete, false);
+      assert.equal(outcome.usage.costUsd, null);
+      assert.equal(outcome.usage.reservedCostUsd, attempt.reservedCostUsd);
+      assert.equal(attempt.reconciledCostUsd, null);
+      assert.equal(attempt.releasedCostUsd, 0);
+      assert.equal(attempt.validProposal, false);
+      assert.equal(h.calls(), 1);
+      assert.equal(h.graph().nodes.length, 1);
+      assert.equal(JSON.stringify(h.graph()).includes(privateText), false);
+    });
+  }
+});
+
+test('timeouts use explicit error or deadline evidence, never elapsed duration alone', async t => {
+  let clock = 0;
+  t.mock.method(performance, 'now', () => clock);
+  const slow = paidHarness(() => {
+    clock = 30017;
+    throw new Error('not proof of timeout');
+  });
+  await slow.run();
+  assert.equal(slow.graph().run.attempts[0].diagnostics.elapsedMs, 30017);
+  assert.equal(slow.graph().run.attempts[0].diagnostics.failureKind, 'request_network_failure');
+
+  for (const stage of ['request', 'body_read']) {
+    const controller = new AbortController();
+    t.mock.method(AbortSignal, 'timeout', milliseconds => {
+      assert.equal(milliseconds, 30000);
+      return controller.signal;
+    });
+    const h = paidHarness(() => {
+      if (stage === 'request') {
+        controller.abort(new DOMException('private deadline', 'TimeoutError'));
+        throw new DOMException('private abort', 'AbortError');
+      }
+      return new Response(new ReadableStream({
+        pull(stream) {
+          controller.abort(new DOMException('private deadline', 'TimeoutError'));
+          stream.error(new DOMException('private abort', 'AbortError'));
+        },
+      }));
+    });
+    await h.run();
+    const d = h.graph().run.attempts[0].diagnostics;
+    assert.equal(d.stage, stage);
+    assert.equal(d.failureKind, stage === 'request' ? 'request_timeout' : 'body_read_timeout');
+    assert.equal(d.exceptionClass, 'AbortError');
+  }
+});
+
+test('validated usage survives identity and proposal rejection with distinct diagnostics', async () => {
+  for (const [patch, stage, kind, accounted] of [
+    [data => { data.usage.total_tokens++; }, 'usage_validation', 'accounting_validation_failure', false],
+    [data => { data.model = 'wrong/model'; }, 'identity_validation', 'identity_validation_failure', true],
+    [data => { data.provider = 'private\nprovider'; }, 'identity_validation', 'identity_validation_failure', true],
+    [data => { data.choices[0].message.content = '{private completion'; },
+      'proposal_parse', 'proposal_validation_failure', true],
+    [data => { data.choices[0].message.content = 'null'; },
+      'proposal_validation', 'proposal_validation_failure', true],
+    [data => { data.choices[0].finish_reason = 'length'; },
+      'proposal_validation', 'proposal_validation_failure', true],
+    [data => { data.choices[0].message.content = JSON.stringify({ nodeId: 'root', mutations: [{ op: 'unsafe' }] }); },
+      'proposal_validation', 'proposal_validation_failure', true],
+  ]) {
+    const h = paidHarness(context => {
+      const data = paidCompletion(context);
+      patch(data);
+      return response(data);
+    });
+    const outcome = await h.run();
+    const attempt = h.graph().run.attempts[0];
+    assert.equal(attempt.diagnostics.stage, stage);
+    assert.equal(attempt.diagnostics.failureKind, kind);
+    assert.equal(attempt.diagnostics.topLevelJsonType, 'object');
+    assert.equal(attempt.diagnostics.httpStatus, 200);
+    assert.equal(attempt.validProposal, false);
+    assert.equal(outcome.usage.accountingComplete, accounted);
+    assert.equal(attempt.reconciledCostUsd, accounted ? 0.00009 : null);
+    assert.equal(attempt.reportedCostUsd, 0.00009);
+    assert.equal(attempt.usage?.totalTokens ?? null, accounted ? 150 : null);
+    assert.equal(h.calls(), 1);
+    assert.equal(h.graph().nodes[0].evidence.length, 0);
+    assert.equal(JSON.stringify(h.graph()).includes('private'), false);
+  }
+});
+
+test('response hash and diagnostics survive MangoDB reopening without raw completion or headers', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'tag-inference-diagnostics-'));
+  let store;
+  try {
+    store = await openStore(directory);
+    const body = '{"private completion":';
+    const agent = createProvider({ model: paidModel, apiKey: 'private credential',
+      fetchImpl: async url => url.endsWith('/models') ? response(paidCatalogue)
+        : new Response(body, { headers: { 'x-private': 'private header' } }) });
+    await dispatchRun({ objective: 'Inspect structural diagnostics', limits: { maxRetries: 0 } }, { store, provider: agent });
+    const before = await store.load();
+    await store.close();
+    store = await openStore(directory);
+    const after = await store.load();
+    assert.deepEqual(after, before);
+    const d = after.run.attempts[0].diagnostics;
+    assert.equal(d.failureKind, 'json_parse_failure');
+    assert.equal(d.responseBytes, Buffer.byteLength(body));
+    assert.equal(d.responseSha256, createHash('sha256').update(body).digest('hex'));
+    assert.equal(JSON.stringify(after).includes('private'), false);
+  } finally {
+    await store?.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('successful proposal audit records completion without retaining the raw response', async () => {
+  const h = paidHarness();
+  await h.run();
+  const attempt = h.graph().run.attempts[0];
+  assert.equal(attempt.validProposal, true);
+  assert.equal(attempt.diagnostics.stage, 'complete');
+  assert.equal(attempt.diagnostics.failureKind, null);
+  assert.equal(attempt.diagnostics.topLevelJsonType, 'object');
+  assert.equal(attempt.actualModel, paidModel);
+  assert.equal(attempt.actualProvider, 'DeepSeek');
+  assert.equal(attempt.usage.totalTokens, 150);
 });
 
 test('wrong-node proposals and model tool requests cannot perform host actions', async () => {
