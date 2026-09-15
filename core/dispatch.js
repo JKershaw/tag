@@ -28,7 +28,7 @@ const maxGraphBytes = 1024 * 1024;
 const size = value => new TextEncoder().encode(JSON.stringify(value)).length;
 
 // The provider and store are trusted host capabilities, never model-supplied.
-export async function dispatchRun(task, { store, provider, wait = sleep, now = () => performance.now() }) {
+export async function dispatchRun(task, { store, provider, wait = sleep, now = () => performance.now(), planning = false }) {
   if (!task || typeof task !== 'object' || Array.isArray(task)
     || Object.keys(task).some(key => !['objective', 'context', 'limits'].includes(key))
     || typeof task.objective !== 'string' || !task.objective.trim() || task.objective.length > 4000
@@ -36,9 +36,11 @@ export async function dispatchRun(task, { store, provider, wait = sleep, now = (
     throw new Error('Expected { objective: text (1..4000), context?: text (0..16000), limits?: object }');
   }
   const limits = executionLimits(task.limits);
+  if (planning) Object.assign(limits, { maxGenerations: 1, maxRetries: 0 });
   if (await store.load()) throw new Error('Dispatch requires an empty store; runs cannot be restarted or reused');
   let graph = seed(task.objective, task.context ?? '');
   graph.run = {
+    ...(planning ? { mode: 'plan' } : {}),
     limits, model: provider.model, provider: provider.name, maxGraphBytes,
     routingPolicy: structuredClone(provider.routingPolicy ?? null),
     usage: { generations: 0, promptTokens: 0, completionTokens: 0, totalTokens: 0,
@@ -57,13 +59,15 @@ export async function dispatchRun(task, { store, provider, wait = sleep, now = (
     updated.run.stoppingReason = reason;
     const root = updated.nodes[0];
     const blockers = updated.nodes.filter(node => !terminal.has(node.status)).map(node => explain(updated, node.id));
-    if (!terminal.has(root.status)) {
+    const planned = planning && reason === 'plan_created';
+    if (!planned && !terminal.has(root.status)) {
       root.status = updated.nodes.some(node => terminal.has(node.status)) ? 'partially_resolved' : 'failed';
       root.result = `Execution stopped: ${reason}. No complete root synthesis is available.`;
       root.reason = reason;
     }
     const outcome = {
-      status: root.status, result: root.result,
+      status: planned ? 'planned' : root.status,
+      result: planned ? 'Research and decomposition recorded. Implementation has not been executed.' : root.result,
       evidence: root.evidence, blockers,
       usage: updated.run.usage, stoppingReason: reason,
     };
@@ -107,7 +111,8 @@ export async function dispatchRun(task, { store, provider, wait = sleep, now = (
     const pending = structuredClone(graph);
     pending.revision++;
     pending.run.usage.generations++;
-    const context = buildContext(pending, node.id);
+    const context = buildContext(pending, node.id, planning ? { maxTextCharacters: 16000 } : {});
+    if (planning) context.mode = 'plan';
     const remainingUsd = limits.maxCostUsd - pending.run.usage.knownCostUsd;
     let reservation = null;
     if (graph.run.pricing.status === 'known_priced') {
@@ -189,6 +194,15 @@ export async function dispatchRun(task, { store, provider, wait = sleep, now = (
     if (!reason) {
       try {
         if (response.proposal?.nodeId !== node.id) throw new Error('wrong_node');
+        if (planning) {
+          const mutations = response.proposal?.mutations;
+          if (!Array.isArray(mutations)
+            || !mutations.some(m => m.op === 'add' && (m.type === undefined || m.type === 'task'))
+            || !mutations.some(m => m.op === 'evidence')
+            || mutations.some(m => !['add', 'depend', 'reference', 'evidence', 'decision', 'block'].includes(m.op))) {
+            throw new Error('Expected a research-backed decomposition, not execution');
+          }
+        }
         if (graph.nodes.length + (response.proposal?.mutations?.filter(m => m.op === 'add').length ?? 0) > limits.maxNodes) {
           reason = 'graph_limit';
         } else {
@@ -226,6 +240,7 @@ export async function dispatchRun(task, { store, provider, wait = sleep, now = (
       }
       return stop(reason);
     }
+    if (planning) return stop('plan_created');
     retries = 0;
     retryDelay = 0;
   }
