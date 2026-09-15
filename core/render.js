@@ -22,7 +22,9 @@ export function renderGraph(graph, { html = false } = {}) {
   const summary = `${graph.nodes.length} nodes · revision ${graph.revision} · generation ${graph.generation} · next: ${next}`;
   const run = graph.run
     ? `${graph.run.mode === 'plan' ? 'One-shot planning' : 'Dispatch'} · stopped: ${graph.run.stoppingReason ?? 'pending'}`
-    : 'Graph snapshot · see context and evidence for provenance';
+    : root.context.startsWith('OFFLINE REPLAY:')
+      ? 'OFFLINE REPLAY · recorded proposal, not fresh inference or completed implementation'
+      : 'Graph snapshot · see context and evidence for provenance';
   if (!html) {
     const lines = [plain(root.objective), summary, run,
       'Nested nodes = decomposition; depends on = prerequisites; references = context links.', ''];
@@ -32,7 +34,11 @@ export function renderGraph(graph, { html = false } = {}) {
       for (const [label, value] of [
         ['Depends on', node.blockedBy.join(', ')], ['References', node.references.join(', ')],
         ['Reason', node.reason], ['Context', node.context], ['Result', node.result],
-      ]) if (value) lines.push(`${indent}  ${label}: ${plain(value)}`);
+      ]) if (value) {
+        const preview = plain(value);
+        lines.push(`${indent}  ${label}: ${preview.slice(0, 600)}`
+          + (preview.length > 600 ? ` … [clipped; inspect ${node.id} for full text]` : ''));
+      }
       for (const field of ['evidence', 'decisions', 'actions']) {
         for (const record of node[field]) {
           lines.push(`${indent}  ${field}: ${plain(record.text ?? JSON.stringify(record))}`
@@ -82,8 +88,7 @@ summary{cursor:pointer;color:#165a9d}header,footer{padding:12px 0}code{font-weig
 <p>Nested cards show decomposition. “Depends on” links show execution order; “References” links connect supporting context.
 Click a link to highlight its node. Expand a card to inspect rationale, acceptance criteria, and evidence.</p>
 <p>Next runnable node: ${next === 'none' ? 'none' : link(next)}. This view does not execute work.
-Evidence records are provenance claims, not independently verified proof.</p>
-<pre>${escape(root.context)}</pre></header>
+Evidence records are provenance claims, not independently verified proof.</p></header>
 <main><ul class="tree">${visit(root)}</ul></main>
 <footer><details><summary>Run accounting and transition history</summary>
 <pre>${escape(JSON.stringify({ run: graph.run ?? null, history: graph.history }, null, 2))}</pre>

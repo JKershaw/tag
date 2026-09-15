@@ -26,6 +26,94 @@ move it to another machine. `state.json` contains the exported self-development
 graph, not a live database; `graph` exports a portable snapshot and `init --from snapshot.json`
 imports one into an empty MangoDB store.
 
+## See TAG plan improvements to itself
+
+This iteration makes **objective → source research → decomposition → inspection**
+visible. It does not implement the proposed improvements or execute child tasks.
+It reuses TAG's existing graph protocol, scheduler, MangoDB store, and budgeted
+provider path; there is no new service, UI dependency, or autonomous execution loop.
+
+### Reliable offline demonstration
+
+From the repository root, with Node.js 22+:
+
+```sh
+npm ci
+node cli.js demo --store .tag/improve-tag-demo
+node cli.js view --store .tag/improve-tag-demo
+node cli.js view --html --store .tag/improve-tag-demo > .tag/improve-tag.html
+```
+
+Open `.tag/improve-tag.html` in your browser. It is a self-contained, offline HTML
+file: no server, scripts, CDN, or model credentials are needed.
+You should see **Improve TAG** above four child cards:
+
+- `planning`: one source-grounded decomposition, runnable.
+- `inspection`: readable graph inspection, independently runnable.
+- `demonstration`: waiting for both `planning` and `inspection`.
+- `execution-policy`: a question explicitly waiting for a human.
+
+The root waits for its children; it is **not resolved**. Click prerequisite links
+to highlight their nodes and expand cards for rationale, acceptance criteria,
+evidence, and source locations. The footer shows transition history.
+The terminal view shows the same hierarchy and relationships; long context is
+explicitly clipped there, while HTML and `inspect` retain the full text.
+
+**This is a labelled recorded replay, not fresh LLM research.**
+`examples/improve-tag.proposal.json` records an external coding agent's inspection
+and decomposition of baseline commit `94eef1c` for this iteration. Baseline
+citations describe gaps before these changes, not claims that those gaps still
+exist. Replaying applies that proposal through TAG's normal atomic mutation
+validator. It makes no network calls, runs no tests, and changes no source files.
+
+### Fresh planning for an objective
+
+```sh
+# Preview exactly the local research material the planner will send:
+node cli.js research
+
+# Supply your key through the environment, never a file committed to the repo.
+export OPENROUTER_API_KEY='your-key'
+node cli.js plan "Improve TAG" --store .tag/improve-tag-live
+node cli.js view --html --store .tag/improve-tag-live > .tag/improve-tag-live.html
+```
+
+Open `.tag/improve-tag-live.html`. Substitute your own objective in the `plan`
+command to ask for a different improvement to this TAG checkout.
+Fresh planning reads a fixed, bounded selection of local TAG sources, with line
+numbers, content hashes, and explicit clipping, then asks the existing OpenRouter
+adapter to analyse those excerpts and produce one research-backed decomposition.
+It does **not** crawl arbitrary files, read environment files, search the web,
+run tools/tests, or independently verify model claims. Review `research` before
+using it on a checkout containing private modifications: those excerpts are sent
+to your selected provider. Missing information should appear as questions rather
+than invented findings.
+
+Planning permits **at most one inference attempt, no retries**, up to 2,048 output
+tokens, 25 nodes, and the existing $0.10 local budget ceiling and pricing checks.
+The default is the existing allowlisted free model; `TAG_MODEL` selects another
+existing allowlisted route explicitly. There is no fallback or paid escalation.
+A successful outcome says `status: "planned"` and
+`stoppingReason: "plan_created"`; the graph remains open with unexecuted tasks.
+Fresh model output varies and is not promised to match the offline replay.
+
+Unavailable models/pricing, malformed proposals, or accounting errors stop
+explicitly; **failure never silently substitutes the replay**. As with dispatch,
+check the JSON outcome as well as the process exit code. Use `graph` and `history`
+to inspect `run.pricing`, attempt diagnostics, and usage; an unknown charge is
+still `null`, not zero. Live inference is not required for the offline demo.
+
+Both commands require an empty store. To run again, choose a new directory
+(for example `.tag/improve-tag-live-2`); existing runs are never overwritten.
+Inspection works with existing TAG stores too:
+
+```sh
+node cli.js inspect demonstration --store .tag/improve-tag-demo
+node cli.js explain demonstration --store .tag/improve-tag-demo
+node cli.js graph --store .tag/improve-tag-demo
+node cli.js history --store .tag/improve-tag-demo
+```
+
 ## External coding-agent workflow
 
 TAG is useful without provider credentials. A trusted host can inspect files,

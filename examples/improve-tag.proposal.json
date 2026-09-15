@@ -2,7 +2,7 @@
   "protocolVersion": 1,
   "revision": 0,
   "nodeId": "root",
-  "summary": "Recorded host research of TAG's baseline and one bounded decomposition of Improve TAG; replay fixture, not autonomous execution.",
+  "summary": "Recorded host research of TAG baseline commit 94eef1c and one bounded decomposition of Improve TAG; replay fixture, not autonomous execution. All baseline file:line citations refer to that commit.",
   "mutations": [
     {
       "op": "evidence",

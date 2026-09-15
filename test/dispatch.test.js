@@ -84,6 +84,49 @@ test('zero budget stops before pricing or inference and terminalizes the root', 
   assert.equal(h.calls(), 0);
 });
 
+test('planning rejects direct answers, tool requests, and ungrounded decompositions atomically', async () => {
+  const child = { op: 'add', id: 'child', parentId: 'root', objective: 'Proposed improvement' };
+  const evidence = { op: 'evidence', id: 'root', text: 'Supplied source observation', source: 'core/graph.js:96-118' };
+  for (const mutations of [
+    [{ op: 'resolve', id: 'root', result: 'Already improved' }],
+    [child],
+    [evidence],
+    [child, evidence, { op: 'resolve', id: 'child', result: 'Pretend completion' }],
+    [child, evidence, { op: 'propose', id: 'root', tool: 'shell', input: {}, reason: 'Execute' }],
+    [child, evidence, { op: 'depend', id: 'child', on: 'root' }],
+  ]) {
+    const h = harness(context => response(completion(context, mutations)));
+    const outcome = await dispatchRun({ objective: 'Improve TAG' }, { ...h.options, planning: true });
+    assert.equal(outcome.stoppingReason, 'invalid_proposal');
+    assert.equal(h.calls(), 1);
+    assert.equal(h.graph().nodes.length, 1);
+    assert.equal(h.graph().run.attempts[0].status, 'rejected');
+    assert.equal(outcome.usage.accountingComplete, true);
+  }
+});
+
+test('planning does not retry failures, bypass preflight, or invent known costs', async () => {
+  const limited = harness(() => response({}, 429));
+  const outcome = await dispatchRun({ objective: 'Improve TAG', limits: { maxGenerations: 15, maxRetries: 1 } },
+    { ...limited.options, planning: true });
+  assert.equal(outcome.stoppingReason, 'rate_limited');
+  assert.equal(limited.calls(), 1);
+  assert.equal(limited.graph().run.limits.maxGenerations, 1);
+  assert.deepEqual(limited.waits, []);
+
+  const unknown = harness(undefined, {}, { catalogue: { data: [] } });
+  assert.equal((await dispatchRun({ objective: 'Improve TAG' }, { ...unknown.options, planning: true })).stoppingReason,
+    'provider_preflight_failed');
+  assert.equal(unknown.calls(), 0);
+
+  const uncertain = harness(() => { throw new Error('connection lost'); });
+  const failed = await dispatchRun({ objective: 'Improve TAG' }, { ...uncertain.options, planning: true });
+  assert.equal(uncertain.calls(), 1);
+  assert.equal(failed.usage.costUsd, null);
+  assert.equal(failed.usage.accountingComplete, false);
+  assert.equal(failed.usage.reservedCostUsd, 0.10);
+});
+
 test('generation exhaustion counts every request and rate limits successful calls', async () => {
   const h = harness(context => response(completion(context, [
     { op: 'evidence', id: context.nodeId, text: 'Still working', source: 'test' },
