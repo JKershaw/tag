@@ -66,7 +66,7 @@ test('strict limits reject weakening, unknown fields and invalid task input befo
   for (const limits of [
     { concurrency: 2 }, { maxRetries: 2 }, { minDelayMs: 2999 }, { maxGenerations: 16 },
     { maxCostUsd: 0.11 }, { maxCostUsd: NaN }, { maxCostUsd: '0.1' }, { maxNodes: 26 },
-    { maxOutputTokens: 2049 }, { maxOutputTokens: null }, { ignored: 1 }, [], null,
+    { maxOutputTokens: 4097 }, { maxOutputTokens: null }, { ignored: 1 }, [], null,
   ]) assert.throws(() => executionLimits(limits));
   const h = harness();
   await assert.rejects(dispatchRun({ objective: 'test', context: { shell: 'no' } }, h.options));

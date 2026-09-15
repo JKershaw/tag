@@ -22,7 +22,9 @@ function cancelBody(body) {
 }
 const freeRouter = 'openrouter/free';
 const paidModel = 'deepseek/deepseek-v4.1-flash';
-export const allowedModels = Object.freeze(['meta-llama/llama-3.3-70b-instruct:free', 'qwen/qwen3-4b:free', freeRouter, paidModel]);
+const paidModelCapable = 'deepseek/deepseek-v4-pro';
+const noPinModels = Object.freeze([freeRouter, paidModel, paidModelCapable]);
+export const allowedModels = Object.freeze(['meta-llama/llama-3.3-70b-instruct:free', 'qwen/qwen3-4b:free', freeRouter, paidModel, paidModelCapable]);
 export const allowedProviders = Object.freeze(['Chutes']);
 const instructions = `Operate the supplied problem graph, one bounded action per request.
 Return only one JSON proposal matching the supplied protocol.
@@ -33,10 +35,13 @@ Tool requests require human approval; shell commands and file writes are never e
 const planningInstructions = `
 This request is research and decomposition ONLY, not execution or a final answer.
 Read the supplied repository excerpts, identify existing capabilities and concrete gaps relevant to the objective.
-Return one compact proposal: add 3–6 actionable task/question nodes, dependencies where needed, and evidence citing supplied file:line ranges.
-Each task context should state its rationale and acceptance criteria. Record uncertainty as a blocked question, not a fact.
+Return one compact proposal: add exactly 3–6 actionable task/question nodes, dependencies where needed, and evidence citing supplied file:line ranges.
+Each task context must state its rationale and acceptance criteria in one or two short sentences each; do not quote or restate the supplied
+repository excerpts, cite only their file:line locations. Record uncertainty as a blocked question, not a fact.
 Only add, depend, reference, evidence, decision, and block mutations are permitted. Include at least one task and evidence record.
-Do not resolve any node, request tools, implement changes, or claim tests ran. Keep within the output token limit; stop after decomposition.`;
+Do not resolve any node, request tools, implement changes, or claim tests ran.
+Output strictly the JSON proposal object matching the supplied protocol and nothing else: no preamble, prose, or explanation outside that JSON.
+Stay well within the output token limit; stop as soon as the compact decomposition is complete.`;
 
 async function json(response, diagnostics = {}) {
   diagnostics.stage = 'body_read';
@@ -130,9 +135,9 @@ const messagesFor = context => [
 ];
 
 export function createProvider({ apiKey, model = allowedModels[0],
-  provider = [freeRouter, paidModel].includes(model) ? null : allowedProviders[0], fetchImpl = fetch } = {}) {
+  provider = noPinModels.includes(model) ? null : allowedProviders[0], fetchImpl = fetch } = {}) {
   if (!allowedModels.includes(model) || !(allowedProviders.includes(provider)
-    || ([freeRouter, paidModel].includes(model) && provider === null))) throw new Error('Model/provider not allowlisted');
+    || (noPinModels.includes(model) && provider === null))) throw new Error('Model/provider not allowlisted');
   const policy = (prompt = 0, completion = 0) => Object.freeze({
     ...(provider === null ? {} : { only: Object.freeze([provider]) }),
     allow_fallbacks: false, require_parameters: true,
@@ -182,7 +187,7 @@ export function createProvider({ apiKey, model = allowedModels[0],
       const maximum = tariff(pricing);
       if (!maximum) return { ...record, reason: 'pricing_invalid' };
       const free = Object.values(maximum).every(value => value === 0);
-      const paid = model === paidModel && !free
+      const paid = [paidModel, paidModelCapable].includes(model) && !free
         && matches[0].architecture?.tokenizer === 'DeepSeek'
         && Number.isSafeInteger(matches[0].context_length) && matches[0].context_length > 0
         && Object.entries(maximum).every(([key, value]) =>
@@ -192,7 +197,7 @@ export function createProvider({ apiKey, model = allowedModels[0],
         reason: free ? 'all_prices_zero' : 'nonzero_price',
         promptPriceUsd: Math.max(maximum.prompt, maximum.input_cache_read ?? 0, maximum.input_cache_write ?? 0),
         completionPriceUsd: maximum.completion, allAdvertisedPricesZero: free, paidInference: paid,
-        ...(model === paidModel ? { advertisedPricing: pricing, contextLength: matches[0].context_length,
+        ...([paidModel, paidModelCapable].includes(model) ? { advertisedPricing: pricing, contextLength: matches[0].context_length,
           tokenizer: matches[0].architecture?.tokenizer } : {}) };
       if (paid) routingPolicy = policy(verifiedPricing.promptPriceUsd * 1e6, maximum.completion * 1e6);
       return structuredClone(verifiedPricing);
@@ -200,7 +205,7 @@ export function createProvider({ apiKey, model = allowedModels[0],
     reserve(context, maxOutputTokens, remainingUsd) {
       reservation = null;
       if (!verifiedPricing?.paidInference || !verified || !Number.isSafeInteger(maxOutputTokens)
-        || maxOutputTokens < 128 || maxOutputTokens > 2048) return null;
+        || maxOutputTokens < 128 || maxOutputTokens > 4096) return null;
       reservedMessages = JSON.stringify(messagesFor(context));
       // Byte-level text tokenization cannot exceed UTF-8 bytes; allow another 4096
       // tokens for the two-message template and provider framing. Never use cache discounts.
@@ -215,7 +220,7 @@ export function createProvider({ apiKey, model = allowedModels[0],
       return reservation;
     },
     async generate(context, maxOutputTokens, reserved) {
-      if (!verified || !Number.isSafeInteger(maxOutputTokens) || maxOutputTokens < 128 || maxOutputTokens > 2048) {
+      if (!verified || !Number.isSafeInteger(maxOutputTokens) || maxOutputTokens < 128 || maxOutputTokens > 4096) {
         throw new Error('Unverified provider or invalid token limit');
       }
       const paid = verifiedPricing.paidInference;
@@ -250,6 +255,9 @@ export function createProvider({ apiKey, model = allowedModels[0],
             model, max_tokens: maxOutputTokens, stream: false, response_format: { type: 'json_object' },
             usage: { include: true },
             provider: routingPolicy,
+            // Planning is bounded research/decomposition, not deep reasoning; keep the fixed
+            // output budget for the compact JSON proposal itself, not hidden reasoning tokens.
+            ...(context.mode === 'plan' ? { reasoning: { enabled: false } } : {}),
             messages: messagesFor(context),
           }),
         });
