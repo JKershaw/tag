@@ -1,0 +1,214 @@
+{
+  "checkedAt": "2026-09-15T06:06:16.149Z",
+  "summary": "After the operator reported permitting non-ZDR inference, one unchanged bounded diagnostic independently verified zero catalogue pricing but received HTTP 404. TAG stopped itself. The completion prerequisite failed, so none of the three MangoDB fixtures was replayed.",
+  "externalBoundary": {
+    "error": "provider_unavailable",
+    "httpStatus": 404,
+    "underlyingCause": "Unknown: the existing adapter does not retain provider error bodies. This response does not establish whether workspace ZDR remains the cause.",
+    "furtherInferenceAttempted": false
+  },
+  "unchanged": {
+    "runtimeCode": true,
+    "safetyControls": true,
+    "fixtureInputsAndLimits": true,
+    "priorArtifacts": true,
+    "selfDevelopmentState": { "revision": 8, "generation": 7, "nodes": 6, "rootStatus": "resolved" },
+    "harbourIntegrated": false
+  },
+  "hostValidation": {
+    "command": "npm test",
+    "workingDirectory": "/home/runner/work/tag/tag",
+    "testsPassed": 96,
+    "testsFailed": 0,
+    "evidenceFile": "/home/runner/work/tag/tag/test/mangodb-tasks.test.js",
+    "lifecycleEvidenceLines": "11-33",
+    "queryEvidenceLines": "35-57",
+    "snapshotEvidenceLines": "59-86",
+    "scope": "The existing host tests reproduced all three supplied observations. No live model assessment or synthesis was produced."
+  },
+  "fixtureHashesBeforeAndAfter": {
+    "algorithm": "SHA-256",
+    "matched": true,
+    "lifecycle": "005bd9c2f909916e611dacb6777414152a20938ce8dba9ff04c40ea255a7f23c",
+    "query": "40989bb6d28f9102ae0c6958e1ed145f412f0ad71538965beedd1f03cb43b5a7",
+    "snapshot": "e2d7abc81d55ea8a1716f3a9b262b6578591cbe796a8394588be9a3acc427957"
+  },
+  "fixtures": [
+    {
+      "name": "lifecycle",
+      "replayed": false,
+      "reason": "Successful completion prerequisite not met",
+      "newTerminalOutcome": null,
+      "actualModel": null,
+      "actualProvider": null,
+      "inferenceAttempts": 0,
+      "generations": 0,
+      "providerReportedCostUsd": null,
+      "newGraph": null,
+      "decompositionsCreated": 0,
+      "finalSynthesizedResult": null,
+      "hostObservationsVerified": true,
+      "resultSupportedByHostEvidence": null,
+      "tagStoppedByItself": null
+    },
+    {
+      "name": "query",
+      "replayed": false,
+      "reason": "Successful completion prerequisite not met",
+      "newTerminalOutcome": null,
+      "actualModel": null,
+      "actualProvider": null,
+      "inferenceAttempts": 0,
+      "generations": 0,
+      "providerReportedCostUsd": null,
+      "newGraph": null,
+      "decompositionsCreated": 0,
+      "finalSynthesizedResult": null,
+      "hostObservationsVerified": true,
+      "resultSupportedByHostEvidence": null,
+      "tagStoppedByItself": null
+    },
+    {
+      "name": "snapshot",
+      "replayed": false,
+      "reason": "Successful completion prerequisite not met",
+      "newTerminalOutcome": null,
+      "actualModel": null,
+      "actualProvider": null,
+      "inferenceAttempts": 0,
+      "generations": 0,
+      "providerReportedCostUsd": null,
+      "newGraph": null,
+      "decompositionsCreated": 0,
+      "finalSynthesizedResult": null,
+      "hostObservationsVerified": true,
+      "resultSupportedByHostEvidence": null,
+      "tagStoppedByItself": null
+    }
+  ],
+  "verification": {
+    "directory": "/tmp/tag-mangodb-policy-replay-puwPwM/verification",
+    "taskSource": "Same objective, context and limits as the existing routing-diagnostic.json before.graph",
+    "graphNodes": 1,
+    "graphCompactJsonBytes": 1979,
+    "decompositionsCreated": 0,
+    "informationGapNodesCreated": 0,
+    "finalSynthesizedResult": null,
+    "resultSupportedByHostEvidence": null,
+    "tagStoppedByItself": true,
+    "outcome": {
+      "status": "failed",
+      "result": "Execution stopped: provider_unavailable. No complete root synthesis is available.",
+      "evidence": [],
+      "blockers": [
+        { "id": "root", "status": "ready", "terminal": false, "runnable": true, "reason": null, "prerequisites": [], "children": [] }
+      ],
+      "usage": {
+        "generations": 1,
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "totalTokens": 0,
+        "knownCostUsd": 0,
+        "costUsd": null,
+        "accountingComplete": false,
+        "reservedCostUsd": 0.03
+      },
+      "stoppingReason": "provider_unavailable"
+    },
+    "graph": {
+      "protocolVersion": 1,
+      "revision": 3,
+      "generation": 1,
+      "nodes": [
+        {
+          "id": "root",
+          "objective": "Diagnose free-router endpoint eligibility. Resolve this diagnostic task without using tools.",
+          "parentId": null,
+          "type": "task",
+          "context": "",
+          "status": "failed",
+          "blockedBy": [],
+          "references": [],
+          "evidence": [],
+          "decisions": [],
+          "actions": [],
+          "result": "Execution stopped: provider_unavailable. No complete root synthesis is available.",
+          "reason": "provider_unavailable",
+          "attempts": 1
+        }
+      ],
+      "history": [
+        { "revision": 2, "generation": 1, "nodeId": "root", "outcome": "rejected", "error": "provider_unavailable" },
+        { "revision": 3, "generation": 1, "nodeId": "root", "outcome": "stopped", "stoppingReason": "provider_unavailable" }
+      ],
+      "run": {
+        "limits": {
+          "maxGenerations": 1,
+          "maxCostUsd": 0.03,
+          "concurrency": 1,
+          "maxRetries": 0,
+          "minDelayMs": 3000,
+          "maxOutputTokens": 1536,
+          "maxNodes": 3
+        },
+        "model": "openrouter/free",
+        "provider": null,
+        "maxGraphBytes": 1048576,
+        "routingPolicy": {
+          "allow_fallbacks": false,
+          "require_parameters": true,
+          "max_price": { "prompt": 0, "completion": 0 }
+        },
+        "usage": {
+          "generations": 1,
+          "promptTokens": 0,
+          "completionTokens": 0,
+          "totalTokens": 0,
+          "knownCostUsd": 0,
+          "costUsd": null,
+          "accountingComplete": false,
+          "reservedCostUsd": 0.03
+        },
+        "pricing": {
+          "status": "known_free",
+          "reason": "all_prices_zero",
+          "model": "openrouter/free",
+          "provider": null,
+          "source": "https://openrouter.ai/api/v1/models",
+          "checkedAt": "2026-09-15T06:06:16.149Z",
+          "modelPresent": true,
+          "promptPriceUsd": 0,
+          "completionPriceUsd": 0,
+          "allAdvertisedPricesZero": true,
+          "paidInference": false
+        },
+        "attempts": [
+          {
+            "generation": 1,
+            "nodeId": "root",
+            "model": "openrouter/free",
+            "provider": null,
+            "status": "rejected",
+            "requestedModel": "openrouter/free",
+            "actualModel": null,
+            "requestedProvider": null,
+            "actualProvider": null,
+            "routingPolicy": {
+              "allow_fallbacks": false,
+              "require_parameters": true,
+              "max_price": { "prompt": 0, "completion": 0 }
+            },
+            "startedAt": "2026-09-15T06:06:16.362Z",
+            "retry": 0,
+            "finishedAt": "2026-09-15T06:06:16.536Z",
+            "reportedCostUsd": null,
+            "usage": null,
+            "error": "provider_unavailable",
+            "httpStatus": 404
+          }
+        ],
+        "stoppingReason": "provider_unavailable"
+      }
+    }
+  }
+}
