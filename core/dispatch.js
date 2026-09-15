@@ -40,6 +40,7 @@ export async function dispatchRun(task, { store, provider, wait = sleep, now = (
   let graph = seed(task.objective, task.context ?? '');
   graph.run = {
     limits, model: provider.model, provider: provider.name, maxGraphBytes,
+    routingPolicy: structuredClone(provider.routingPolicy ?? null),
     usage: { generations: 0, promptTokens: 0, completionTokens: 0, totalTokens: 0,
       knownCostUsd: 0, costUsd: 0, accountingComplete: true, reservedCostUsd: 0 },
     pricing: { status: 'unknown', reason: 'not_checked' },
@@ -107,6 +108,8 @@ export async function dispatchRun(task, { store, provider, wait = sleep, now = (
       generation: pending.run.usage.generations, nodeId: node.id,
       model: provider.model, provider: provider.name, status: 'pending',
       requestedModel: provider.model, actualModel: null,
+      requestedProvider: provider.name, actualProvider: null,
+      routingPolicy: structuredClone(provider.routingPolicy ?? null),
       startedAt: new Date().toISOString(), retry: retries,
     });
     await save(pending);
@@ -123,6 +126,7 @@ export async function dispatchRun(task, { store, provider, wait = sleep, now = (
       status: 'rejected', finishedAt: new Date().toISOString(),
       model: response.model ?? provider.model, provider: response.provider ?? provider.name,
       actualModel: response.model ?? null,
+      actualProvider: response.provider ?? null,
       reportedCostUsd: response.reportedCostUsd ?? response.usage?.costUsd ?? null,
       usage: response.usage ?? null, error: response.error ?? null, httpStatus: response.httpStatus ?? null,
     });

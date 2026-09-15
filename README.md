@@ -133,7 +133,8 @@ Each HTTP response is capped at 2 MiB and each request times out after 30 second
 
 **Paid inference is intentionally unsupported.** The fixed HTTPS OpenRouter
 endpoint accepts only `meta-llama/llama-3.3-70b-instruct:free` (default),
-`qwen/qwen3-4b:free`, or `openrouter/free`, and only the `Chutes` backend.
+`qwen/qwen3-4b:free`, or `openrouter/free`. Ordinary models remain restricted to
+the `Chutes` backend; the free router has no default provider pin.
 `TAG_MODEL` can explicitly select an allowlisted model or route; there is no automatic model switch, fallback, or
 paid escalation. Free model availability is not guaranteed. Before any model
 call, TAG locally verifies the model catalogue has zero prices for every
@@ -143,12 +144,15 @@ maximum prompt/completion prices; returned model/provider identities are checked
 
 `openrouter/free` is the sole router exception to exact returned-model matching:
 OpenRouter selects the actual model, whose nonempty bounded model ID must be
-returned along with the allowed provider. The route itself must pass the same
+returned; the actual provider is recorded when supplied, otherwise left unknown.
+An explicitly supplied Chutes pin is still enforced. The route itself must pass the same
 catalogue validator as ordinary models: its name or documentation alone never
 authorizes inference. The live catalogue must contain exactly one matching entry,
 explicit valid prompt/completion zeros, and no nonzero or invalid advertised
 components. No individual routed-model tariff is hardcoded or inferred.
-The provider restrictions remain intact even if no compatible endpoint exists.
+Only this router may omit `provider.only`; ordinary model/provider allowlists
+remain unchanged. `allow_fallbacks: false`, `require_parameters: true`, and zero
+maximum prompt/completion prices still apply. No ZDR requirement is added.
 
 Catalogue knowledge is recorded separately from permission to run and actual
 charges. `graph.run.pricing.status` is one of:
@@ -191,8 +195,9 @@ malformed responses/proposals, and output truncation stop. Error bodies and
 credentials are not written to audit. `graph.run` records requested/returned
 model/provider, pricing verification, limits, per-attempt tokens/cost/errors,
 timestamps, reservations, and final stopping reason.
-Each attempt retains `requestedModel` separately from `actualModel` (null when
-no response model is available) and `reportedCostUsd` separately from validated
+The run and each attempt persist the exact `routingPolicy` sent to OpenRouter.
+Each attempt retains `requestedModel`/`requestedProvider` separately from
+`actualModel`/`actualProvider` (null when not reported), and `reportedCostUsd` separately from validated
 usage. HTTP 404 is recorded as `provider_unavailable`, without retry or an
 assumption of zero cost.
 
@@ -375,6 +380,74 @@ Exact CLI outcomes and reopened graph/audit exports are preserved under
 **This is not the first verified live TAG model completion:** pricing preflight
 is now positively verified for this route, but none of the three requests
 returned a model completion.
+
+### Provider restriction diagnosis: blocked by workspace ZDR (2026-09-14)
+
+Before changing code, one bounded diagnostic dispatch through the unchanged
+adapter reproduced HTTP 404. Its actual OpenRouter error explicitly said that
+the available free-model providers were `novita`, `google-ai-studio`, `liquid`,
+`nex-agi`, `poolside`, and `nvidia`, but the request's `provider.only` allowed
+only `chutes`. Thus Chutes-only was a concrete exclusion, not a pricing failure.
+The router's endpoint listing was empty (it is a router, not a concrete model);
+the account-filtered catalogue still advertised its prompt/completion prices
+as zero.
+
+The minimal request change removes **only** the default `provider.only` for
+`openrouter/free`. Explicit Chutes pins and ordinary model restrictions remain
+enforced. Free-only catalogue verification, zero prompt/completion price caps,
+`allow_fallbacks: false`, `require_parameters: true`, credentials, capability
+boundaries and all local limits remain unchanged. The audit now records the
+exact routing policy and separates requested from actually reported providers;
+missing provider attribution remains null.
+
+Unpinning did **not** obtain a completion. A second diagnostic returned 404;
+a third diagnostic captured the remaining error:
+
+> 0 endpoints out of 3 requested are available matching your guardrail
+> restrictions and data policy. [...] ZDR violation (guardrail):
+> 3 endpoints excluded
+
+This is an OpenRouter workspace/account guardrail, not a TAG request setting.
+TAG sends no ZDR requirement. OpenRouter documents that
+[request-level ZDR cannot override account or guardrail enforcement](https://openrouter.ai/docs/guides/features/zdr#per-request-zdr-enforcement);
+adding `zdr: false` would not resolve it. No account settings, keys, billing
+constraints or other guardrails were changed, and no further inference was
+attempted.
+
+All three diagnostic dispatches used the same diagnostic objective and limits:
+one maximum generation, $0.03, concurrency one, zero retries, 3-second minimum
+spacing, 1,536 output tokens and three maximum graph nodes. Each independently
+verified `known_free`, made one inference attempt/generation, stopped with
+`provider_unavailable`, returned no actual model/provider or usage, and retained
+its $0.03 reservation with unknown (`null`) cost. Their graph sizes were
+1 node / 1,728 compact JSON bytes before unpinning, and 1 node / 1,979 bytes
+for each unpinned diagnostic. Combined diagnostic cost is **unknown**, not zero.
+
+The diagnostic messages were manually inspected for sensitive data and retained
+with outcomes and reopened graphs in
+`/home/runner/work/tag/tag/examples/mangodb/routing-diagnostic.json`.
+Production audit behavior still excludes raw provider error bodies.
+
+**Lifecycle, query and snapshot were not replayed in this milestone.** The
+verified-completion prerequisite remains blocked; each has zero new attempts,
+zero new generations, no new returned model/provider or provider-reported cost,
+and no new graph/store. Their inputs, limits and prior artifacts are untouched,
+with all three fixture SHA-256 hashes matching the baseline. No successful
+completion is claimed and the previous HTTP 404 outcomes are not relabelled.
+
+All **96 tests pass** (91 baseline plus five focused routing regressions):
+Chutes exclusion versus an otherwise identical unpinned request; explicit
+pin/ordinary-model enforcement; absent-provider attribution; immutable routing
+price caps; and fail-closed workspace ZDR rejection. Existing tests also cover
+pricing-state semantics, positive-cost stops, unknown costs and MangoDB audit
+persistence. CodeQL found zero alerts.
+
+**TAG has not yet achieved its first verified live completion.** An OpenRouter
+administrator needs to permit non-ZDR inference for this experiment in the
+[applicable guardrail](https://openrouter.ai/workspaces/default/guardrails),
+without changing spending limits or other safety controls. Then a separately
+authorized continuation can verify a free completion and replay the three
+unchanged fixtures once each in fresh stores. No Harbour integration was added.
 
 ## Graph rules and human boundaries
 

@@ -56,11 +56,18 @@ function price(value) {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
-export function createProvider({ apiKey, model = allowedModels[0], provider = allowedProviders[0], fetchImpl = fetch } = {}) {
-  if (!allowedModels.includes(model) || !allowedProviders.includes(provider)) throw new Error('Model/provider not allowlisted');
+export function createProvider({ apiKey, model = allowedModels[0],
+  provider = model === freeRouter ? null : allowedProviders[0], fetchImpl = fetch } = {}) {
+  if (!allowedModels.includes(model) || !(allowedProviders.includes(provider)
+    || (model === freeRouter && provider === null))) throw new Error('Model/provider not allowlisted');
+  const routingPolicy = Object.freeze({
+    ...(provider === null ? {} : { only: Object.freeze([provider]) }),
+    allow_fallbacks: false, require_parameters: true,
+    max_price: Object.freeze({ prompt: 0, completion: 0 }),
+  });
   let verified = false;
   return {
-    model, name: provider,
+    model, name: provider, routingPolicy,
     async verify() {
       verified = false;
       const record = {
@@ -112,8 +119,7 @@ export function createProvider({ apiKey, model = allowedModels[0], provider = al
           body: JSON.stringify({
             model, max_tokens: maxOutputTokens, stream: false, response_format: { type: 'json_object' },
             usage: { include: true },
-            provider: { only: [provider], allow_fallbacks: false, require_parameters: true,
-              max_price: { prompt: 0, completion: 0 } },
+            provider: routingPolicy,
             messages: [{ role: 'system', content: instructions }, { role: 'user', content: JSON.stringify(context) }],
           }),
         });
@@ -147,7 +153,10 @@ export function createProvider({ apiKey, model = allowedModels[0], provider = al
         ? typeof data.model === 'string' && data.model !== freeRouter
           && /^[a-zA-Z0-9][a-zA-Z0-9._-]*\/[a-zA-Z0-9._:/-]+$/.test(data.model) && data.model.length <= 128
         : [model, model.replace(/:free$/, '')].includes(data.model);
-      if (!modelMatches || data.provider !== provider) {
+      const providerMatches = provider === null
+        ? data.provider == null || (identity(data.provider) !== null && data.provider.length <= 128)
+        : data.provider === provider;
+      if (!modelMatches || !providerMatches) {
         return { ...result, error: 'provider_identity_mismatch' };
       }
       if (usage.completionTokens > maxOutputTokens) return { ...result, error: 'output_limit' };

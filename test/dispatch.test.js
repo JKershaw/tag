@@ -115,7 +115,7 @@ test('unexpected spend is accounted and stops, even below the budget', async () 
 const router = 'openrouter/free';
 const routerCatalogue = { data: [{ id: router, pricing: { prompt: '0', completion: '0' } }] };
 const routerOptions = { requestedModel: router, catalogue: routerCatalogue };
-const routedCompletion = context => ({ ...completion(context), model: 'routed/actual-model' });
+const routedCompletion = context => ({ ...completion(context), model: 'routed/actual-model', provider: 'Other' });
 
 test('free router requires explicit catalogue zeros and preserves routing restrictions and attribution', async () => {
   const h = harness(context => response(routedCompletion(context)), {}, routerOptions);
@@ -130,11 +130,16 @@ test('free router requires explicit catalogue zeros and preserves routing restri
   assert.equal(attempt.requestedModel, router);
   assert.equal(attempt.actualModel, 'routed/actual-model');
   assert.equal(attempt.model, 'routed/actual-model');
-  assert.equal(attempt.provider, provider);
+  assert.equal(attempt.provider, 'Other');
+  assert.equal(attempt.actualProvider, 'Other');
+  assert.equal(attempt.requestedProvider, null);
+  assert.equal(h.graph().run.provider, null);
   assert.equal(h.requests[0].model, router);
   assert.deepEqual(h.requests[0].provider, {
-    only: [provider], allow_fallbacks: false, require_parameters: true, max_price: { prompt: 0, completion: 0 },
+    allow_fallbacks: false, require_parameters: true, max_price: { prompt: 0, completion: 0 },
   });
+  assert.deepEqual(attempt.routingPolicy, h.requests[0].provider);
+  assert.deepEqual(h.graph().run.routingPolicy, h.requests[0].provider);
   assert.deepEqual(h.requests[0].usage, { include: true });
 });
 
@@ -166,13 +171,15 @@ test('router absence or ambiguity cannot select an ordinary free model instead',
   }
 });
 
-test('router still requires actual-model attribution, the allowed provider and valid usage on every completion', async () => {
+test('router still requires actual-model attribution, valid provider metadata and usage on every completion', async () => {
   for (const [override, reason] of [
     [{ model: undefined }, 'provider_identity_mismatch'],
     [{ model: router }, 'provider_identity_mismatch'],
     [{ model: '' }, 'provider_identity_mismatch'],
     [{ model: 'x/y'.repeat(100) }, 'provider_identity_mismatch'],
-    [{ provider: 'Other' }, 'provider_identity_mismatch'],
+    [{ provider: '' }, 'provider_identity_mismatch'],
+    [{ provider: {} }, 'provider_identity_mismatch'],
+    [{ provider: 'x'.repeat(129) }, 'provider_identity_mismatch'],
     [{ usage: undefined }, 'usage_unavailable'],
     [{ usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 } }, 'usage_unavailable'],
   ]) {
@@ -183,6 +190,65 @@ test('router still requires actual-model attribution, the allowed provider and v
   }
   const ordinary = harness(context => response(routedCompletion(context)));
   assert.equal((await ordinary.run()).stoppingReason, 'provider_identity_mismatch');
+});
+
+test('Chutes-only excludes available free-router endpoints; unpinned routing changes only provider.only', async () => {
+  const requests = [];
+  const fetchImpl = async (url, options) => {
+    if (url.endsWith('/models')) return response(routerCatalogue);
+    const request = JSON.parse(options.body);
+    requests.push(request);
+    if (request.provider.only) return response({ error: { code: 404,
+      message: 'No allowed providers are available for the selected model. Available: novita; provider.only: chutes.' } }, 404);
+    return response(routedCompletion({ nodeId: 'root', revision: 0 }));
+  };
+  const pinned = createProvider({ model: router, provider, fetchImpl });
+  const unpinned = createProvider({ model: router, fetchImpl });
+  assert.equal((await pinned.verify()).status, 'known_free');
+  assert.equal((await unpinned.verify()).status, 'known_free');
+  assert.equal((await pinned.generate({}, 1536)).error, 'provider_unavailable');
+  const result = await unpinned.generate({}, 1536);
+  assert.equal(result.error, undefined);
+  assert.equal(result.usage.costUsd, 0);
+  assert.equal(result.provider, 'Other');
+  const restrictedRequest = structuredClone(requests[0]);
+  delete restrictedRequest.provider.only;
+  assert.deepEqual(requests[1], restrictedRequest);
+});
+
+test('explicit provider pinning remains enforced and ordinary models cannot be unpinned', async () => {
+  assert.throws(() => createProvider({ model, provider: null }), /allowlisted/);
+  assert.throws(() => createProvider({ model: router, provider: 'Other' }), /allowlisted/);
+  for (const requestedModel of [model, router]) {
+    const agent = createProvider({ model: requestedModel, provider, fetchImpl: async url => url.endsWith('/models')
+      ? response(requestedModel === router ? routerCatalogue : catalog)
+      : response({ ...completion({ nodeId: 'root', revision: 0 }), provider: 'Other' }) });
+    await agent.verify();
+    assert.equal((await agent.generate({}, 1536)).error, 'provider_identity_mismatch');
+    assert.deepEqual(agent.routingPolicy.only, [provider]);
+  }
+});
+
+test('unreported free-router provider remains null rather than being inferred from routing policy', async () => {
+  for (const returnedProvider of [undefined, null]) {
+    const h = harness(context => response({ ...routedCompletion(context), provider: returnedProvider }), {}, routerOptions);
+    assert.equal((await h.run()).status, 'resolved');
+    assert.equal(h.graph().run.attempts[0].actualProvider, null);
+    assert.equal(h.graph().run.attempts[0].provider, null);
+  }
+  const h = harness(() => response({}, 404));
+  await h.run();
+  assert.equal(h.graph().run.attempts[0].requestedProvider, provider);
+  assert.equal(h.graph().run.attempts[0].actualProvider, null);
+});
+
+test('routing policy cannot be mutated to remove zero-price caps or alter provider restrictions', () => {
+  for (const requestedModel of [model, router]) {
+    const agent = createProvider({ model: requestedModel });
+    assert.throws(() => { agent.routingPolicy.max_price.prompt = 1; }, TypeError);
+    assert.throws(() => { agent.routingPolicy.allow_fallbacks = true; }, TypeError);
+    if (agent.routingPolicy.only) assert.throws(() => agent.routingPolicy.only.push('Other'), TypeError);
+  }
 });
 
 test('nonzero router cost on a later completion stops before applying it or making another request', async () => {
@@ -219,6 +285,30 @@ test('router endpoint unavailability stops without retry, fallback or assumed ze
   assert.equal(JSON.stringify(h.graph()).includes('Private endpoint details'), false);
 });
 
+test('workspace ZDR rejection after unpinning stops without retrying or overriding account guardrails', async () => {
+  const message = '0 endpoints out of 3 requested are available matching your guardrail restrictions and data policy. '
+    + 'ZDR violation (guardrail): 3 endpoints excluded';
+  const h = harness(() => response({ error: { code: 404, message } }, 404), { maxRetries: 0 }, routerOptions);
+  const outcome = await h.run();
+  assert.equal(outcome.stoppingReason, 'provider_unavailable');
+  assert.equal(h.calls(), 1);
+  assert.equal(h.graph().run.pricing.status, 'known_free');
+  assert.deepEqual(h.requests[0].provider, {
+    allow_fallbacks: false, require_parameters: true, max_price: { prompt: 0, completion: 0 },
+  });
+  const attempt = h.graph().run.attempts[0];
+  assert.deepEqual(attempt.routingPolicy, h.requests[0].provider);
+  assert.equal(attempt.actualModel, null);
+  assert.equal(attempt.actualProvider, null);
+  assert.equal(attempt.reportedCostUsd, null);
+  assert.equal(attempt.usage, null);
+  assert.equal(attempt.httpStatus, 404);
+  assert.equal(outcome.usage.costUsd, null);
+  assert.equal(outcome.usage.accountingComplete, false);
+  assert.equal(outcome.usage.reservedCostUsd, h.graph().run.limits.maxCostUsd);
+  assert.equal(JSON.stringify(h.graph()).includes(message), false);
+});
+
 test('nonzero reported router cost is preserved even when token accounting is malformed', async () => {
   const h = harness(context => response({ ...routedCompletion(context), usage: { cost: 0.01 } }), {}, routerOptions);
   const outcome = await h.run();
@@ -247,6 +337,10 @@ test('router requested and returned models survive MangoDB reopening', async () 
     assert.deepEqual(after, before);
     assert.equal(after.run.attempts[0].requestedModel, router);
     assert.equal(after.run.attempts[0].actualModel, 'routed/actual-model');
+    assert.equal(after.run.attempts[0].actualProvider, 'Other');
+    assert.equal(after.run.attempts[0].requestedProvider, null);
+    assert.deepEqual(after.run.routingPolicy, agent.routingPolicy);
+    assert.deepEqual(after.run.attempts[0].routingPolicy, agent.routingPolicy);
   } finally {
     await store?.close();
     await rm(directory, { recursive: true, force: true });
