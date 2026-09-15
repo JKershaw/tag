@@ -223,6 +223,60 @@ Each attempt retains `requestedModel`/`requestedProvider` separately from
 usage. HTTP 404 is recorded as `provider_unavailable`, without retry or an
 assumption of zero cost.
 
+Each inference attempt also persists content-free `diagnostics`: `stage`,
+`failureKind`, HTTP status, monotonic `elapsedMs` (request through adapter
+validation), the 30-second deadline and 2 MiB response limit, bytes actually read,
+whether the body was completely read, its SHA-256 when complete, and the parsed
+top-level JSON type. Missing measurements are `null`; partial byte counts are
+not the full response size. HTTP error bodies are not read. Exception names and
+underlying network codes are allowlisted classifications, never messages, stacks,
+URLs, credentials, or arbitrary headers. Returned identities are bounded and
+syntax-filtered; validated usage and reported numeric cost remain separate.
+
+Inspect `diagnostics.failureKind` alongside the existing stopping reason:
+`request_network_failure`, `request_timeout`, `http_error_status`,
+`body_read_failure`, `body_read_timeout`, `response_size_limit`,
+`utf8_decode_failure`, `json_parse_failure`, `unexpected_json_type`,
+`accounting_validation_failure`, `identity_validation_failure`, or
+`proposal_validation_failure`. `stage` distinguishes proposal JSON parsing from
+graph/protocol validation. A timeout requires explicit timeout exception/code or
+an expired request signal: **elapsed time near 30 seconds is not a diagnosis**.
+Legacy stopping reasons such as `malformed_response` remain compatible.
+`validProposal` becomes true only when graph validation and application succeed.
+No raw prompt/completion payloads are added to the audit; accepted graph mutations
+and the existing caller-supplied task remain normal graph state.
+
+#### Controlled lifecycle diagnostic attempt (2026-09-15)
+
+After all **124 offline tests passed**, CodeQL reported zero alerts and an
+independent read-only review found no significant issues (the built-in review
+binary was unavailable). Exactly one new dispatch used the unchanged
+`examples/mangodb/lifecycle-task.json`, `deepseek/deepseek-v4.1-flash`, no provider
+pin, and the existing two-generation/$0.03/zero-retry fixture limits.
+No query or snapshot fixture was dispatched, and no fallback was attempted.
+
+The isolated store is `/tmp/tag-lifecycle-diagnostics-QiDwpS/lifecycle`.
+The persisted outcome and graph are exported as
+`examples/mangodb/lifecycle-diagnostics-outcome.json` and
+`examples/mangodb/lifecycle-diagnostics-graph.json`. The task SHA-256 before and
+after was `005bd9c2f909916e611dacb6777414152a20938ce8dba9ff04c40ea255a7f23c`.
+
+The single inference request was rejected with **HTTP 429**: terminal root
+`failed`, stopping reason `rate_limited`, stage `http_status`, failure kind
+`http_error_status`, elapsed **768.56941 ms**. The response body was deliberately
+not read: byte count, JSON type and body hash are unknown; the configured size
+limit remained 2,097,152 bytes. Actual model/provider, token usage and
+provider-reported cost were not established. There was no valid proposal,
+decomposition, evidence, tool action or model-applied mutation; the one-node graph
+only records executor rejection and stopping (generation 1, revision 3).
+
+The $0.0041424 reservation was released in full under the existing explicit-429
+unbilled-rejection rule: reconciled cost $0, outstanding reservation $0,
+accounting complete. These ledger zeros are **not provider-reported usage**.
+No further inference was sent. The previous attempt's unknown charge and retained
+reservation were not modified; neither this 429 nor the earlier 30.017-second
+duration establishes the cause of that earlier `malformed_response`.
+
 No model output is executed as shell commands or file writes. Validated graph
 mutations are the only automatic effects; tool proposals require human review.
 `tag iterate` and the old unbudgeted HTTP adapter have been retired rather than
