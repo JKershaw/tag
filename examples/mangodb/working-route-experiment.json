@@ -1,0 +1,158 @@
+{
+  "status": "working_model_established",
+  "limits": {
+    "maxDirectRequests": 3,
+    "retries": 0,
+    "experimentMaxCostUsd": 0.09,
+    "priorUncertainReservationUsd": 0.0041424,
+    "lifecycleMaxCostUsd": 0.03
+  },
+  "accountPreflight": {
+    "httpStatus": 200,
+    "limitUsd": 1,
+    "remainingUsd": 0.9994494,
+    "reset": "daily",
+    "usageUsd": 0.0005506
+  },
+  "directDiagnostics": [
+    {
+      "requestedModel": "deepseek/deepseek-v4.1-flash",
+      "routingPolicy": {
+        "allow_fallbacks": false,
+        "require_parameters": true,
+        "max_price": {
+          "prompt": 0.3,
+          "completion": 1.2
+        }
+      },
+      "pricing": {
+        "status": "known_priced",
+        "reason": "nonzero_price",
+        "model": "deepseek/deepseek-v4.1-flash",
+        "provider": null,
+        "source": "https://openrouter.ai/api/v1/models",
+        "checkedAt": "2026-09-15T06:53:22.996Z",
+        "modelPresent": true,
+        "promptPriceUsd": 3e-7,
+        "completionPriceUsd": 0.0000012,
+        "allAdvertisedPricesZero": false,
+        "paidInference": true,
+        "advertisedPricing": {
+          "prompt": "0.0000003",
+          "completion": "0.0000012",
+          "input_cache_read": "0.000000006",
+          "overrides": [
+            {
+              "utc_days": [
+                "saturday",
+                "sunday"
+              ],
+              "prompt": "0.00000015",
+              "completion": "0.0000006",
+              "input_cache_read": "0.000000003"
+            },
+            {
+              "utc_days": [
+                "monday",
+                "tuesday",
+                "wednesday",
+                "thursday",
+                "friday"
+              ],
+              "utc_start": 0,
+              "utc_end": 100,
+              "prompt": "0.00000015",
+              "completion": "0.0000006",
+              "input_cache_read": "0.000000003"
+            },
+            {
+              "utc_days": [
+                "monday",
+                "tuesday",
+                "wednesday",
+                "thursday",
+                "friday"
+              ],
+              "utc_start": 100,
+              "utc_end": 400,
+              "prompt": "0.0000003",
+              "completion": "0.0000012",
+              "input_cache_read": "0.000000006"
+            },
+            {
+              "utc_days": [
+                "monday",
+                "tuesday",
+                "wednesday",
+                "thursday",
+                "friday"
+              ],
+              "utc_start": 400,
+              "utc_end": 600,
+              "prompt": "0.00000015",
+              "completion": "0.0000006",
+              "input_cache_read": "0.000000003"
+            },
+            {
+              "utc_days": [
+                "monday",
+                "tuesday",
+                "wednesday",
+                "thursday",
+                "friday"
+              ],
+              "utc_start": 600,
+              "utc_end": 1000,
+              "prompt": "0.0000003",
+              "completion": "0.0000012",
+              "input_cache_read": "0.000000006"
+            },
+            {
+              "utc_days": [
+                "monday",
+                "tuesday",
+                "wednesday",
+                "thursday",
+                "friday"
+              ],
+              "utc_start": 1000,
+              "utc_end": 0,
+              "prompt": "0.00000015",
+              "completion": "0.0000006",
+              "input_cache_read": "0.000000003"
+            }
+          ]
+        },
+        "contextLength": 1048576,
+        "tokenizer": "DeepSeek"
+      },
+      "maxOutputTokens": 128,
+      "inputTokenBound": 4147,
+      "reservedCostUsd": 0.0013977,
+      "startedAt": "2026-09-15T06:53:23.089Z",
+      "httpStatus": 200,
+      "actualModel": "deepseek/deepseek-v4.1-flash",
+      "actualProvider": "Relace",
+      "usage": {
+        "promptTokens": 34,
+        "completionTokens": 16,
+        "totalTokens": 50,
+        "costUsd": 0.0000147
+      },
+      "reportedCostUsd": 0.0000147,
+      "reconciledCostUsd": 0.0000147,
+      "releasedCostUsd": 0.001383,
+      "accountingComplete": true,
+      "validCompletion": true,
+      "status": "success",
+      "finishedAt": "2026-09-15T06:53:30.928Z"
+    }
+  ],
+  "selectedModel": "deepseek/deepseek-v4.1-flash",
+  "lifecycle": {
+    "status": "not_attempted",
+    "inferenceAttempts": 0
+  },
+  "tagModified": false,
+  "fixtureModified": false
+}
