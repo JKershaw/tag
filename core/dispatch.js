@@ -73,16 +73,22 @@ export async function dispatchRun(task, { store, provider, wait = sleep, now = (
     return outcome;
   }
   if (limits.maxCostUsd === 0) return stop('budget_exhausted');
-  try {
-    graph.run.pricing = await provider.verify();
-  } catch {
-    graph.run.pricing = { status: 'unknown', reason: 'verification_error' };
+  async function verify() {
+    try {
+      graph.run.pricing = await provider.verify();
+    } catch {
+      graph.run.pricing = { status: 'unknown', reason: 'verification_error' };
+    }
+    if (!['known_free', 'known_priced', 'unknown'].includes(graph.run.pricing?.status)) {
+      graph.run.pricing = { status: 'unknown', reason: 'invalid_verification' };
+    }
+    graph.run.routingPolicy = structuredClone(provider.routingPolicy ?? null);
+    return graph.run.pricing.status === 'known_free'
+      || (graph.run.pricing.status === 'known_priced' && graph.run.pricing.paidInference === true
+        && typeof provider.reserve === 'function');
   }
-  if (!['known_free', 'known_priced', 'unknown'].includes(graph.run.pricing?.status)) {
-    graph.run.pricing = { status: 'unknown', reason: 'invalid_verification' };
-  }
-  if (graph.run.pricing.status !== 'known_free') {
-    graph.run.preflightError = 'Only known-free pricing is permitted; see run.pricing';
+  if (!await verify()) {
+    graph.run.preflightError = 'Pricing is unknown or not authorized for inference; see run.pricing';
     return stop('provider_preflight_failed');
   }
   let lastFinished = null;
@@ -96,12 +102,21 @@ export async function dispatchRun(task, { store, provider, wait = sleep, now = (
     if (graph.run.usage.generations >= limits.maxGenerations) return stop('generation_exhausted');
     if (lastFinished !== null) {
       await wait(Math.ceil(Math.max(0, Math.max(limits.minDelayMs, retryDelay) - (now() - lastFinished))));
+      if (!await verify()) return stop('provider_preflight_failed');
     }
     const pending = structuredClone(graph);
     pending.revision++;
     pending.run.usage.generations++;
-    // Reserve the entire remaining budget before I/O. An uncertain response never releases it.
-    pending.run.usage.reservedCostUsd = limits.maxCostUsd - pending.run.usage.knownCostUsd;
+    const context = buildContext(pending, node.id);
+    const remainingUsd = limits.maxCostUsd - pending.run.usage.knownCostUsd;
+    let reservation = null;
+    if (graph.run.pricing.status === 'known_priced') {
+      try { reservation = provider.reserve(context, limits.maxOutputTokens, remainingUsd); } catch {}
+      if (!reservation || !Number.isFinite(reservation.costUsd) || reservation.costUsd <= 0
+        || reservation.costUsd > remainingUsd) return stop('reservation_unavailable');
+    }
+    // Persist before I/O; uncertain responses never release the reservation.
+    pending.run.usage.reservedCostUsd = reservation?.costUsd ?? remainingUsd;
     pending.run.usage.accountingComplete = false;
     pending.run.usage.costUsd = null;
     pending.run.attempts.push({
@@ -110,12 +125,15 @@ export async function dispatchRun(task, { store, provider, wait = sleep, now = (
       requestedModel: provider.model, actualModel: null,
       requestedProvider: provider.name, actualProvider: null,
       routingPolicy: structuredClone(provider.routingPolicy ?? null),
+      pricing: structuredClone(graph.run.pricing),
+      reservedCostUsd: pending.run.usage.reservedCostUsd,
+      reservation: structuredClone(reservation),
       startedAt: new Date().toISOString(), retry: retries,
     });
     await save(pending);
     let response;
     try {
-      response = await provider.generate(buildContext(graph, node.id), limits.maxOutputTokens);
+      response = await provider.generate(context, limits.maxOutputTokens, reservation);
     } catch {
       response = { error: 'provider_transport_error', uncertain: true };
     }
@@ -131,6 +149,13 @@ export async function dispatchRun(task, { store, provider, wait = sleep, now = (
       usage: response.usage ?? null, error: response.error ?? null, httpStatus: response.httpStatus ?? null,
     });
     const usage = updated.run.usage;
+    if (response.usage && (!['promptTokens', 'completionTokens', 'totalTokens'].every(
+      key => Number.isSafeInteger(response.usage[key]) && response.usage[key] >= 0)
+      || response.usage.totalTokens !== response.usage.promptTokens + response.usage.completionTokens
+      || !Number.isFinite(response.usage.costUsd) || response.usage.costUsd < 0)) {
+      response.usage = null;
+      response.error = 'usage_unavailable';
+    }
     if (response.usage) {
       usage.promptTokens += response.usage.promptTokens;
       usage.completionTokens += response.usage.completionTokens;
@@ -149,9 +174,12 @@ export async function dispatchRun(task, { store, provider, wait = sleep, now = (
       response.error ??= 'usage_unavailable';
       attempt.error = response.error;
     }
+    attempt.reconciledCostUsd = response.usage?.costUsd ?? (response.unbilled === true ? 0 : null);
+    attempt.releasedCostUsd = usage.accountingComplete
+      ? Math.max(0, attempt.reservedCostUsd - attempt.reconciledCostUsd) : 0;
     let reason = response.error;
-    if (response.usage?.costUsd > 0) reason = 'pricing_violation';
-    else if (usage.knownCostUsd >= limits.maxCostUsd) reason = 'budget_exhausted';
+    if (graph.run.pricing.status === 'known_free' && attempt.reportedCostUsd > 0) reason = 'pricing_violation';
+    else if (attempt.reportedCostUsd > attempt.reservedCostUsd) reason = 'reservation_violation';
     if (!reason) {
       try {
         if (response.proposal?.nodeId !== node.id) throw new Error('wrong_node');

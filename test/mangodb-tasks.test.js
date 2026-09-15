@@ -93,6 +93,12 @@ test('MangoDB fixtures conform to external dispatch with a bounded combined allo
     allowance += task.limits.maxCostUsd;
     generations += task.limits.maxGenerations;
     assert.equal(task.limits.maxRetries, 0);
+    assert.equal(task.limits.maxCostUsd, 0.03);
+    assert.equal(task.limits.concurrency, 1);
+    assert.equal(task.limits.maxGenerations, 2);
+    assert.equal(task.limits.maxOutputTokens, 1536);
+    assert.equal(task.limits.minDelayMs, 3000);
+    assert.equal(task.limits.maxNodes, 3);
     let graph;
     const outcome = await dispatchRun(task, {
       store: { load: async () => graph, save: async value => { graph = structuredClone(value); } },
@@ -103,6 +109,6 @@ test('MangoDB fixtures conform to external dispatch with a bounded combined allo
     assert.equal(graph.nodes[0].context, task.context);
     assert.equal(outcome.usage.generations, 0);
   }
-  assert.ok(allowance <= 0.10);
+  assert.ok(allowance <= 0.09);
   assert.ok(generations <= 6);
 });

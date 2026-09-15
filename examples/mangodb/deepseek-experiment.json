@@ -1,0 +1,121 @@
+{
+  "status": "stopped_incomplete",
+  "requestedModel": "deepseek/deepseek-v4.1-flash",
+  "implementationCommit": "9284d7a11077265ae72d40e2e7f3d89d297c1518",
+  "tests": {
+    "command": "npm test",
+    "passed": 103,
+    "failed": 0,
+    "hostChecks": {
+      "lifecycle": "passed: test/mangodb-tasks.test.js:11-33; reopened a.count=5, b absent, countDocuments=1",
+      "query": "passed: test/mangodb-tasks.test.js:35-57; exactly b:9 then d:7, projected to _id and score",
+      "snapshot": "passed: test/mangodb-tasks.test.js:59-86; opaque stateJSON round trip deeply equal, action still proposed"
+    }
+  },
+  "limits": {
+    "maxCostUsdPerFixture": 0.03,
+    "maxCostUsdExperiment": 0.09,
+    "maxGenerationsPerFixture": 2,
+    "concurrency": 1,
+    "maxRetries": 0,
+    "minDelayMs": 3000,
+    "maxOutputTokens": 1536,
+    "maxNodesPerFixture": 3,
+    "providerDailyKeyCapUsd": 1,
+    "providerCapRole": "Operator-described outer fuse only; not independently verified or used for local accounting."
+  },
+  "verifiedPricing": {
+    "status": "known_priced",
+    "source": "https://openrouter.ai/api/v1/models",
+    "checkedAt": "2026-09-15T06:22:27.311Z",
+    "promptUsdPerMillionTokens": 0.3,
+    "completionUsdPerMillionTokens": 1.2,
+    "cacheReadUsdPerMillionTokens": 0.006,
+    "scheduledDiscountPromptUsdPerMillionTokens": 0.15,
+    "scheduledDiscountCompletionUsdPerMillionTokens": 0.6,
+    "scheduledDiscountCacheReadUsdPerMillionTokens": 0.003,
+    "reservationPolicy": "Use maxima across the verified base and every schedule; no cache or scheduled discounts assumed.",
+    "fullTariffEvidence": "lifecycle-deepseek-graph.json: run.pricing.advertisedPricing"
+  },
+  "fixtureHashesBeforeAndAfter": {
+    "lifecycle-task.json": "005bd9c2f909916e611dacb6777414152a20938ce8dba9ff04c40ea255a7f23c",
+    "query-task.json": "40989bb6d28f9102ae0c6958e1ed145f412f0ad71538965beedd1f03cb43b5a7",
+    "snapshot-task.json": "e2d7abc81d55ea8a1716f3a9b262b6578591cbe796a8394588be9a3acc427957"
+  },
+  "fixtures": [
+    {
+      "name": "lifecycle",
+      "status": "failed",
+      "store": "/tmp/tag-mangodb-deepseek-eoGzgD/lifecycle",
+      "freshStore": true,
+      "generations": 1,
+      "inferenceAttempts": 1,
+      "actualModel": null,
+      "actualProvider": null,
+      "inputTokens": null,
+      "outputTokens": null,
+      "reservedInputTokens": 7664,
+      "reservedOutputTokens": 1536,
+      "reservedCostUsd": 0.0041424,
+      "actualCostUsd": null,
+      "releasedCostUsd": 0,
+      "accountingComplete": false,
+      "graphNodes": 1,
+      "graphCompactJsonBytes": 7007,
+      "decompositionChildren": 0,
+      "synthesizedResult": null,
+      "hostOutcome": "The lifecycle host check passes, but no usable model response exists to support or contradict.",
+      "stoppingReason": "malformed_response",
+      "attemptElapsedMs": 30017,
+      "failureInterpretation": "Response-body reading or JSON decoding failed; the sanitized audit does not distinguish causes. Timing alone does not prove a timeout.",
+      "outcomeEvidence": "lifecycle-deepseek-outcome.json",
+      "graphEvidence": "lifecycle-deepseek-graph.json"
+    },
+    {
+      "name": "query",
+      "status": "not_attempted",
+      "generations": 0,
+      "inferenceAttempts": 0,
+      "actualModel": null,
+      "actualProvider": null,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "reservedCostUsd": 0,
+      "actualCostUsd": 0,
+      "graphNodes": 0,
+      "decompositionChildren": 0,
+      "store": null,
+      "synthesizedResult": null,
+      "hostOutcome": "The query host check passes independently; no model assessment was requested.",
+      "stoppingReason": "experiment_stopped_after_unreliable_lifecycle_accounting"
+    },
+    {
+      "name": "snapshot",
+      "status": "not_attempted",
+      "generations": 0,
+      "inferenceAttempts": 0,
+      "actualModel": null,
+      "actualProvider": null,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "reservedCostUsd": 0,
+      "actualCostUsd": 0,
+      "graphNodes": 0,
+      "decompositionChildren": 0,
+      "store": null,
+      "synthesizedResult": null,
+      "hostOutcome": "The snapshot host check passes independently; no model assessment was requested.",
+      "stoppingReason": "experiment_stopped_after_unreliable_lifecycle_accounting"
+    }
+  ],
+  "totals": {
+    "generations": 1,
+    "inferenceAttempts": 1,
+    "actualCostUsd": null,
+    "knownCostUsd": 0,
+    "reservedCostUsd": 0.0041424,
+    "accountingComplete": false
+  },
+  "stoppingReason": "Reliable cost accounting is unavailable after lifecycle. Stop all experiment inference and retain the reservation; do not replay or send the remaining fixtures.",
+  "boundaries": "No retries, fallback models, free-route attempts, Harbour integration, changed fixture inputs, or model-generated shell/file execution."
+}
