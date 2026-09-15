@@ -17,7 +17,7 @@ const usage = `TAG — Tiny Agent Node Graph & Lightweight Executor
   tag answer <question-id> <answer> | resume <node-id> <evidence>
   tag dispatch <task.json> --store <new-run-directory>
 Options: --store <directory> (default .tag), --from <snapshot>, --help
-Model: OPENROUTER_API_KEY, optional TAG_MODEL (free allowlist only).
+Model: OPENROUTER_API_KEY, optional TAG_MODEL (allowlisted free routes or budget-reserved DeepSeek V4.1 Flash).
 Without a model, use context + apply with an external coding agent.
 Tool proposals require explicit host action; no model commands are executed.`;
 

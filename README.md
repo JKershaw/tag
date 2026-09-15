@@ -131,16 +131,17 @@ at 32,000 serialized characters; graph growth is additionally checked against a
 1 MiB serialized-byte ceiling with space reserved for audit/stopping records.
 Each HTTP response is capped at 2 MiB and each request times out after 30 seconds.
 
-**Paid inference is intentionally unsupported.** The fixed HTTPS OpenRouter
+**Paid inference requires a local worst-case reservation.** The fixed HTTPS OpenRouter
 endpoint accepts only `meta-llama/llama-3.3-70b-instruct:free` (default),
-`qwen/qwen3-4b:free`, or `openrouter/free`. Ordinary models remain restricted to
-the `Chutes` backend; the free router has no default provider pin.
+`qwen/qwen3-4b:free`, `openrouter/free`, or the explicitly authorized paid model
+`deepseek/deepseek-v4.1-flash`. Individual free models remain restricted to
+the `Chutes` backend; the free router and paid DeepSeek model have no default provider pin.
 `TAG_MODEL` can explicitly select an allowlisted model or route; there is no automatic model switch, fallback, or
 paid escalation. Free model availability is not guaranteed. Before any model
-call, TAG locally verifies the model catalogue has zero prices for every
-advertised pricing component. Missing, malformed, unavailable, or nonzero
-prices stop the run. Requests also prohibit backend fallback and require zero
-maximum prompt/completion prices; returned model/provider identities are checked.
+call, TAG locally verifies current catalogue pricing. Missing, malformed or
+unavailable prices stop the run. Free routes still require every advertised price
+to be zero. Requests prohibit backend fallback and cap prompt/completion prices
+at the verified tariff (zero for free routes); returned identities are checked.
 
 `openrouter/free` is the sole router exception to exact returned-model matching:
 OpenRouter selects the actual model, whose nonempty bounded model ID must be
@@ -150,8 +151,8 @@ catalogue validator as ordinary models: its name or documentation alone never
 authorizes inference. The live catalogue must contain exactly one matching entry,
 explicit valid prompt/completion zeros, and no nonzero or invalid advertised
 components. No individual routed-model tariff is hardcoded or inferred.
-Only this router may omit `provider.only`; ordinary model/provider allowlists
-remain unchanged. `allow_fallbacks: false`, `require_parameters: true`, and zero
+Only this router and the authorized paid model may omit `provider.only`.
+For free routes, `allow_fallbacks: false`, `require_parameters: true`, and zero
 maximum prompt/completion prices still apply. No ZDR requirement is added.
 
 Catalogue knowledge is recorded separately from permission to run and actual
@@ -160,7 +161,7 @@ charges. `graph.run.pricing.status` is one of:
 | State | Meaning | Inference permitted |
 | --- | --- | --- |
 | `known_free` | Required prompt/completion prices and every advertised component are valid and zero. | Yes, within all existing limits. |
-| `known_priced` | All advertised prices are valid, including required prompt/completion, and at least one is positive. | No: paid inference remains unsupported. |
+| `known_priced` | All advertised prices are valid, including required prompt/completion, and at least one is positive. | Only for the authorized paid model, with supported cost accounting and a conservative reservation fitting completely within the remaining local budget. |
 | `unknown` | Discovery failed, the requested model is absent/ambiguous, pricing is missing/invalid, or verification has not run. | No: unknown is never treated as free or as a known paid tariff. |
 
 Verification accepts nonnegative finite numeric prices and decimal strings
@@ -170,23 +171,44 @@ just prompt/completion. The audit includes a sanitized `reason`, discovery
 source/time, and `modelPresent` (`null` when discovery cannot establish presence).
 Unknown prices and `allAdvertisedPricesZero` are `null`, not zero/false.
 The zero-budget `not_checked` record has only status and reason.
-Both disallowed states retain the existing `provider_preflight_failed` outcome;
+Unknown or unauthorized pricing retains the `provider_preflight_failed` outcome;
 inspect `graph.run.pricing` to distinguish them. The low-level trusted provider's
 `verify()` must return an explicit pricing status; absent/unrecognized records
 fail closed. A previously verified adapter loses inference permission if a
-subsequent verification is priced or unknown.
+subsequent verification is unknown or unauthorized. Paid authorization is
+single-use; each subsequent request requires fresh catalogue verification.
 
-The local ledger reserves all remaining USD allowance **durably before I/O**,
-counts the attempt and marks its cost unknown before sending, and releases the reservation only on valid
+For paid text inference, the input estimate is the UTF-8 byte length of the exact
+serialized messages plus 4096 tokens for two-message template/provider framing,
+using the verified DeepSeek byte-level tokenizer family. This deliberately
+overestimates ordinary text token counts. The output estimate is the full
+`maxOutputTokens`, including any reasoning tokens. The estimate must also fit
+the advertised context window. Multiply by the highest verified rates across
+the base tariff and **every** scheduled override, ignore cache discounts, and
+round the USD reservation up to the next nano-dollar. Schedule fields and prices
+are validated, not silently discarded. Higher cache rates also increase the
+input bound; unsupported nonzero fees (including per-request/image charges)
+make paid inference ineligible. OpenRouter price caps use USD per million tokens.
+No provider daily key cap substitutes for this local ledger.
+
+The local ledger persists the paid worst-case reservation (or, for existing free
+runs, all remaining allowance) **durably before I/O**, counts the attempt and
+marks its cost unknown before sending. Insufficient budget or an unavailable
+estimate stops as `reservation_unavailable`, without sending or counting an attempt.
+The reservation is released only on valid
 usage/cost accounting or an explicit HTTP 429 rejection. Missing/malformed
 accounting or uncertain transport/server failures retain the reservation and
 stop immediately without retries. Reported costs are accumulated; any nonzero
-charge violates the free-only tariff and stops as `pricing_violation`, including
-at or above the budget. A positive reported cost is preserved even if token
+free-route charge stops as `pricing_violation`. Paid charges above the reservation
+stop as `reservation_violation`, before applying the proposal; input/output
+token-bound violations also stop. A positive reported cost is preserved even if token
 accounting is malformed; total accounting then remains incomplete, not zero.
 Budget exhaustion stops before another request. As with any remote billing
-API, a provider charging contrary to its advertised zero tariff cannot be
+API, a provider charging contrary to its advertised tariff cannot be
 prevented locally; it is reported, never treated as permission to spend more.
+Each attempt preserves the tariff, token estimate, original reserved USD,
+reconciled actual USD, and unused USD released. A fully accounted exact-budget
+terminal response may be applied; no further inference is permitted.
 
 Only explicit HTTP 429 rejections may retry, within **both** the retry and
 generation ceilings. `Retry-After` is honoured up to 60 seconds; invalid or longer

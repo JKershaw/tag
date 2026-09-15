@@ -39,16 +39,20 @@ function harness(handler = context => response(completion(context)), limits = {}
   const agent = createProvider({ model: requestedModel, fetchImpl: async (url, options) => {
     assert.equal(options.redirect, 'error');
     assert.ok(options.signal);
-    if (url.endsWith('/models')) return response(catalogue);
+    if (url.endsWith('/models')) return response(typeof catalogue === 'function' ? catalogue() : catalogue);
     calls++;
     const request = JSON.parse(options.body);
     requests.push(request);
     assert.equal(graph.run.usage.generations, calls);
     assert.equal(graph.run.attempts.at(-1).status, 'pending');
-    assert.equal(graph.run.usage.reservedCostUsd, graph.run.limits.maxCostUsd);
+    if (graph.run.pricing.status === 'known_priced') {
+      assert.ok(graph.run.usage.reservedCostUsd > 0);
+      assert.ok(graph.run.usage.reservedCostUsd + graph.run.usage.knownCostUsd <= graph.run.limits.maxCostUsd);
+      assert.equal(graph.run.usage.reservedCostUsd, graph.run.attempts.at(-1).reservation.costUsd);
+    } else assert.equal(graph.run.usage.reservedCostUsd, graph.run.limits.maxCostUsd);
     assert.equal(graph.run.usage.accountingComplete, false);
     assert.equal(graph.run.usage.costUsd, null);
-    return handler(JSON.parse(request.messages[1].content), calls);
+    return handler(JSON.parse(request.messages[1].content), calls, request);
   } });
   const options = { store, provider: agent, now: () => clock, wait: async ms => { waits.push(ms); clock += ms; } };
   return {
@@ -109,6 +113,185 @@ test('unexpected spend is accounted and stops, even below the budget', async () 
     assert.equal(outcome.usage.costUsd, cost);
     assert.equal(h.calls(), 1);
     assert.equal(h.graph().history[0].outcome, 'rejected');
+  }
+});
+
+const paidModel = 'deepseek/deepseek-v4.1-flash';
+const paidCatalogue = { data: [{ id: paidModel, context_length: 1048576,
+  architecture: { tokenizer: 'DeepSeek' }, pricing: {
+    prompt: '0.0000003', completion: '0.0000012', input_cache_read: '0.000000006',
+    overrides: [{ utc_days: ['monday'], utc_start: 1000, utc_end: 0,
+      prompt: '0.00000015', completion: '0.0000006', input_cache_read: '0.000000003' }],
+  } }] };
+const paidCompletion = (context, cost = 0.00009, mutations) => ({
+  ...completion(context, mutations), model: paidModel, provider: 'DeepSeek',
+  usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150, cost },
+});
+const paidHarness = (handler = context => response(paidCompletion(context)), limits = {}, catalogue = paidCatalogue) =>
+  harness(handler, { maxCostUsd: 0.03, maxRetries: 0, ...limits }, { requestedModel: paidModel, catalogue });
+
+test('known-priced inference durably reserves a conservative maximum and reconciles actual usage', async () => {
+  const h = paidHarness((context, call, request) => {
+    const attempt = h.graph().run.attempts.at(-1);
+    assert.equal(attempt.reservation.promptTokens,
+      new TextEncoder().encode(JSON.stringify(request.messages)).length + 4096);
+    assert.equal(attempt.reservation.completionTokens, 1536);
+    assert.equal(attempt.reservedCostUsd, Math.ceil(
+      (attempt.reservation.promptTokens * 0.0000003 + 1536 * 0.0000012) * 1e9) / 1e9);
+    return response(paidCompletion(context));
+  });
+  const outcome = await h.run();
+  assert.equal(outcome.status, 'resolved');
+  assert.equal(outcome.usage.costUsd, 0.00009);
+  assert.equal(outcome.usage.reservedCostUsd, 0);
+  assert.equal(outcome.usage.accountingComplete, true);
+  const attempt = h.graph().run.attempts[0];
+  assert.equal(attempt.pricing.status, 'known_priced');
+  assert.equal(attempt.pricing.paidInference, true);
+  assert.deepEqual(attempt.pricing.advertisedPricing, paidCatalogue.data[0].pricing);
+  assert.equal(attempt.reconciledCostUsd, 0.00009);
+  assert.equal(attempt.releasedCostUsd, attempt.reservedCostUsd - 0.00009);
+  assert.deepEqual(h.requests[0].provider, {
+    allow_fallbacks: false, require_parameters: true, max_price: { prompt: 0.3, completion: 1.2 },
+  });
+  assert.deepEqual(attempt.routingPolicy, h.requests[0].provider);
+  assert.equal(attempt.actualModel, paidModel);
+  assert.equal(attempt.actualProvider, 'DeepSeek');
+});
+
+test('paid reservation must fit completely, including exact-fit and exhausted remaining budgets', async () => {
+  const reference = paidHarness();
+  await reference.run();
+  const cost = reference.graph().run.attempts[0].reservedCostUsd;
+  const exact = paidHarness(context => response(paidCompletion(context, cost)), { maxCostUsd: cost });
+  assert.equal((await exact.run()).status, 'resolved');
+  assert.equal(exact.graph().run.usage.costUsd, cost);
+  const tooSmall = paidHarness(undefined, { maxCostUsd: cost - 1e-9 });
+  assert.equal((await tooSmall.run()).stoppingReason, 'reservation_unavailable');
+  assert.equal(tooSmall.calls(), 0);
+  assert.equal(tooSmall.graph().run.usage.generations, 0);
+  const remaining = paidHarness(context => response(paidCompletion(context, cost, [
+    { op: 'evidence', id: 'root', text: 'Continue', source: 'test' },
+  ])), { maxCostUsd: cost + 0.000001 });
+  assert.equal((await remaining.run()).stoppingReason, 'reservation_unavailable');
+  assert.equal(remaining.calls(), 1);
+  assert.equal(remaining.graph().nodes[0].evidence.length, 1);
+});
+
+test('paid costs release unused reservations, but every next request needs current verified pricing', async () => {
+  const h = paidHarness((context, call) => response(paidCompletion(context, 0.00009, call === 1
+    ? [{ op: 'evidence', id: 'root', text: 'Continue', source: 'test' }] : undefined)));
+  assert.equal((await h.run()).status, 'resolved');
+  assert.equal(h.calls(), 2);
+  assert.equal(h.graph().run.usage.costUsd, 0.00018);
+  assert.deepEqual(h.waits, [3000]);
+  for (const pricing of [null, { prompt: '1', completion: '1' }]) {
+    let verifications = 0;
+    const revoked = paidHarness(context => response(paidCompletion(context, 0.00009, [
+      { op: 'evidence', id: 'root', text: 'Preserve this', source: 'test' },
+    ])), {}, () => ++verifications === 1 ? paidCatalogue
+      : { data: [{ ...paidCatalogue.data[0], pricing }] });
+    assert.equal((await revoked.run()).stoppingReason,
+      pricing ? 'reservation_unavailable' : 'provider_preflight_failed');
+    assert.equal(revoked.calls(), 1);
+    assert.equal(revoked.graph().nodes[0].evidence.length, 1);
+    assert.equal(revoked.graph().run.attempts[0].pricing.status, 'known_priced');
+  }
+});
+
+test('paid reservation overruns, missing accounting and uncertain failures stop without applying or retrying', async () => {
+  for (const [handler, reason, accounted] of [
+    [context => response(paidCompletion(context, 0.02)), 'reservation_violation', true],
+    [context => response({ ...paidCompletion(context), usage: undefined }), 'usage_unavailable', false],
+    [context => response({ ...paidCompletion(context), usage: { cost: 0.02 } }), 'reservation_violation', false],
+    [() => { throw new Error('private details'); }, 'provider_transport_error', false],
+    [() => response({}, 503), 'provider_http_error', false],
+    [context => response({ ...paidCompletion(context), provider: undefined }), 'provider_identity_mismatch', true],
+    [context => response({ ...paidCompletion(context), model: 'other/model' }), 'provider_identity_mismatch', true],
+    [context => response({ ...paidCompletion(context), usage: {
+      prompt_tokens: 100000, completion_tokens: 50, total_tokens: 100050, cost: 0.00009,
+    } }), 'input_limit', true],
+  ]) {
+    const h = paidHarness(handler);
+    const outcome = await h.run();
+    assert.equal(outcome.stoppingReason, reason);
+    assert.equal(h.calls(), 1);
+    assert.equal(outcome.usage.accountingComplete, accounted);
+    assert.equal(h.graph().run.attempts[0].status, 'rejected');
+    assert.equal(h.graph().run.attempts[0].reconciledCostUsd, accounted ? outcome.usage.costUsd : null);
+    if (!accounted) {
+      assert.equal(outcome.usage.costUsd, null);
+      assert.equal(outcome.usage.reservedCostUsd, h.graph().run.attempts[0].reservedCostUsd);
+    }
+  }
+});
+
+test('paid verification validates every schedule and component, never assuming unknown charges are zero', async () => {
+  for (const pricing of [
+    null, { prompt: '0.1' }, { prompt: '0', completion: '1e-999' },
+    { ...paidCatalogue.data[0].pricing, overrides: null },
+    { ...paidCatalogue.data[0].pricing, overrides: [{ utc_days: ['monday'], prompt: null }] },
+    { ...paidCatalogue.data[0].pricing, overrides: [{ utc_days: ['never'], prompt: '0' }] },
+    { ...paidCatalogue.data[0].pricing, overrides: [{ utc_days: ['monday'], utc_start: 160, prompt: '0' }] },
+    { ...paidCatalogue.data[0].pricing, overrides: [{ utc_days: ['monday'], unknown: '0.1' }] },
+  ]) {
+    const h = paidHarness(undefined, {}, { data: [{ ...paidCatalogue.data[0], pricing }] });
+    assert.equal((await h.run()).stoppingReason, 'provider_preflight_failed');
+    assert.equal(h.graph().run.pricing.status, 'unknown');
+    assert.equal(h.calls(), 0);
+  }
+  for (const extra of [{ request: '0.001' }, { image: '1' }, JSON.parse('{"__proto__":"1"}')]) {
+    const h = paidHarness(undefined, {}, { data: [{ ...paidCatalogue.data[0],
+      pricing: { ...paidCatalogue.data[0].pricing, ...extra } }] });
+    assert.equal((await h.run()).stoppingReason, 'provider_preflight_failed');
+    assert.equal(h.graph().run.pricing.status, 'known_priced');
+    assert.equal(h.calls(), 0);
+  }
+  const higher = structuredClone(paidCatalogue);
+  higher.data[0].pricing.overrides[0].prompt = '0.0000009';
+  const h = paidHarness(undefined, {}, higher);
+  assert.equal((await h.run()).status, 'resolved');
+  assert.equal(h.graph().run.pricing.promptPriceUsd, 0.0000009);
+  assert.equal(h.requests[0].provider.max_price.prompt, 0.0000009 * 1e6);
+});
+
+test('paid generation requires a single-use matching reservation and fresh verification', async () => {
+  const agent = createProvider({ model: paidModel, fetchImpl: async url => url.endsWith('/models')
+    ? response(paidCatalogue) : response(paidCompletion({ nodeId: 'root', revision: 0 })) });
+  await agent.verify();
+  await assert.rejects(agent.generate({}, 1536), /reservation/);
+  assert.equal(agent.reserve({}, 1536, 0.000001), null);
+  const reservation = agent.reserve({}, 1536, 0.03);
+  await assert.rejects(agent.generate({ altered: true }, 1536, reservation), /reservation/);
+  assert.equal((await agent.generate({}, 1536, reservation)).error, undefined);
+  await assert.rejects(agent.generate({}, 1536, reservation), /Unverified/);
+  await agent.verify();
+  await assert.rejects(agent.generate({}, 1536, reservation), /reservation/);
+});
+
+test('paid pending reservations and reconciled usage survive real MangoDB reopening', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'tag-paid-accounting-'));
+  let store = await openStore(directory);
+  try {
+    const agent = createProvider({ model: paidModel, fetchImpl: async (url, options) => {
+      if (url.endsWith('/models')) return response(paidCatalogue);
+      const pending = await store.load();
+      assert.equal(pending.run.usage.accountingComplete, false);
+      assert.ok(pending.run.usage.reservedCostUsd > 0);
+      assert.equal(pending.run.attempts[0].status, 'pending');
+      return response(paidCompletion(JSON.parse(JSON.parse(options.body).messages[1].content)));
+    } });
+    const outcome = await dispatchRun({ objective: 'Persist paid accounting',
+      limits: { maxCostUsd: 0.03, maxRetries: 0 } }, { store, provider: agent });
+    const before = await store.load();
+    await store.close();
+    store = await openStore(directory);
+    assert.deepEqual(await store.load(), before);
+    assert.equal(before.run.attempts[0].reconciledCostUsd, outcome.usage.costUsd);
+    assert.ok(before.run.attempts[0].releasedCostUsd > 0);
+  } finally {
+    await store.close();
+    await rm(directory, { recursive: true, force: true });
   }
 });
 

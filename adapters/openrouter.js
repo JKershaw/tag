@@ -1,6 +1,7 @@
 const endpoint = 'https://openrouter.ai/api/v1';
 const freeRouter = 'openrouter/free';
-export const allowedModels = Object.freeze(['meta-llama/llama-3.3-70b-instruct:free', 'qwen/qwen3-4b:free', freeRouter]);
+const paidModel = 'deepseek/deepseek-v4.1-flash';
+export const allowedModels = Object.freeze(['meta-llama/llama-3.3-70b-instruct:free', 'qwen/qwen3-4b:free', freeRouter, paidModel]);
 export const allowedProviders = Object.freeze(['Chutes']);
 const instructions = `Operate the supplied problem graph, one bounded action per request.
 Return only one JSON proposal matching the supplied protocol.
@@ -56,20 +57,57 @@ function price(value) {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
+function tariff(pricing) {
+  const { overrides = [], ...base } = pricing;
+  if (!Array.isArray(overrides) || overrides.length > 32) return null;
+  const maximum = Object.create(null);
+  for (const [key, value] of Object.entries(base)) {
+    const parsed = price(value);
+    if (parsed === null) return null;
+    maximum[key] = parsed;
+  }
+  const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+  const time = value => Number.isSafeInteger(value) && value >= 0 && value < 2400 && value % 100 < 60;
+  for (const override of overrides) {
+    if (!override || typeof override !== 'object' || Array.isArray(override)) return null;
+    const { utc_days, utc_start, utc_end, ...rates } = override;
+    if (!Array.isArray(utc_days) || !utc_days.length || utc_days.some(day => !days.includes(day))
+      || ((utc_start !== undefined || utc_end !== undefined) && (!time(utc_start) || !time(utc_end)))
+      || !Object.keys(rates).length) return null;
+    for (const [key, value] of Object.entries(rates)) {
+      const parsed = price(value);
+      if (!Object.hasOwn(maximum, key) || parsed === null) return null;
+      maximum[key] = Math.max(maximum[key], parsed);
+    }
+  }
+  return maximum;
+}
+
+const messagesFor = context => [
+  { role: 'system', content: instructions }, { role: 'user', content: JSON.stringify(context) },
+];
+
 export function createProvider({ apiKey, model = allowedModels[0],
-  provider = model === freeRouter ? null : allowedProviders[0], fetchImpl = fetch } = {}) {
+  provider = [freeRouter, paidModel].includes(model) ? null : allowedProviders[0], fetchImpl = fetch } = {}) {
   if (!allowedModels.includes(model) || !(allowedProviders.includes(provider)
-    || (model === freeRouter && provider === null))) throw new Error('Model/provider not allowlisted');
-  const routingPolicy = Object.freeze({
+    || ([freeRouter, paidModel].includes(model) && provider === null))) throw new Error('Model/provider not allowlisted');
+  const policy = (prompt = 0, completion = 0) => Object.freeze({
     ...(provider === null ? {} : { only: Object.freeze([provider]) }),
     allow_fallbacks: false, require_parameters: true,
-    max_price: Object.freeze({ prompt: 0, completion: 0 }),
+    max_price: Object.freeze({ prompt, completion }),
   });
+  let routingPolicy = policy();
   let verified = false;
+  let verifiedPricing = null;
+  let reservation = null;
+  let reservedMessages = null;
   return {
-    model, name: provider, routingPolicy,
+    model, name: provider, get routingPolicy() { return routingPolicy; },
     async verify() {
       verified = false;
+      verifiedPricing = null;
+      reservation = null;
+      routingPolicy = policy();
       const record = {
         status: 'unknown', reason: 'transport_error', model, provider,
         source: `${endpoint}/models`, checkedAt: new Date().toISOString(),
@@ -99,18 +137,51 @@ export function createProvider({ apiKey, model = allowedModels[0],
         || !Object.hasOwn(pricing, 'prompt') || !Object.hasOwn(pricing, 'completion')) {
         return { ...record, reason: 'pricing_invalid' };
       }
-      const prices = Object.values(pricing).map(price);
-      if (prices.includes(null)) return { ...record, reason: 'pricing_invalid' };
-      verified = prices.every(value => value === 0);
-      return { ...record, status: verified ? 'known_free' : 'known_priced',
-        reason: verified ? 'all_prices_zero' : 'nonzero_price',
-        promptPriceUsd: price(pricing.prompt), completionPriceUsd: price(pricing.completion),
-        allAdvertisedPricesZero: verified };
+      const maximum = tariff(pricing);
+      if (!maximum) return { ...record, reason: 'pricing_invalid' };
+      const free = Object.values(maximum).every(value => value === 0);
+      const paid = model === paidModel && !free
+        && matches[0].architecture?.tokenizer === 'DeepSeek'
+        && Number.isSafeInteger(matches[0].context_length) && matches[0].context_length > 0
+        && Object.entries(maximum).every(([key, value]) =>
+          ['prompt', 'completion', 'input_cache_read', 'input_cache_write'].includes(key) || value === 0);
+      verified = free || paid;
+      verifiedPricing = { ...record, status: free ? 'known_free' : 'known_priced',
+        reason: free ? 'all_prices_zero' : 'nonzero_price',
+        promptPriceUsd: Math.max(maximum.prompt, maximum.input_cache_read ?? 0, maximum.input_cache_write ?? 0),
+        completionPriceUsd: maximum.completion, allAdvertisedPricesZero: free, paidInference: paid,
+        ...(model === paidModel ? { advertisedPricing: pricing, contextLength: matches[0].context_length,
+          tokenizer: matches[0].architecture?.tokenizer } : {}) };
+      if (paid) routingPolicy = policy(verifiedPricing.promptPriceUsd * 1e6, maximum.completion * 1e6);
+      return structuredClone(verifiedPricing);
     },
-    async generate(context, maxOutputTokens) {
+    reserve(context, maxOutputTokens, remainingUsd) {
+      reservation = null;
+      if (!verifiedPricing?.paidInference || !verified || !Number.isSafeInteger(maxOutputTokens)
+        || maxOutputTokens < 128 || maxOutputTokens > 2048) return null;
+      reservedMessages = JSON.stringify(messagesFor(context));
+      // Byte-level text tokenization cannot exceed UTF-8 bytes; allow another 4096
+      // tokens for the two-message template and provider framing. Never use cache discounts.
+      const promptTokens = new TextEncoder().encode(reservedMessages).length + 4096;
+      if (promptTokens + maxOutputTokens > verifiedPricing.contextLength) return null;
+      const costUsd = Math.ceil((promptTokens * verifiedPricing.promptPriceUsd
+        + maxOutputTokens * verifiedPricing.completionPriceUsd) * 1e9) / 1e9;
+      if (!Number.isFinite(costUsd) || costUsd <= 0 || !Number.isFinite(remainingUsd)
+        || remainingUsd > 0.10 || costUsd > remainingUsd) return null;
+      reservation = Object.freeze({ costUsd, promptTokens, completionTokens: maxOutputTokens,
+        method: 'utf8_bytes_plus_4096_framing_tokens', pricing: structuredClone(verifiedPricing) });
+      return reservation;
+    },
+    async generate(context, maxOutputTokens, reserved) {
       if (!verified || !Number.isSafeInteger(maxOutputTokens) || maxOutputTokens < 128 || maxOutputTokens > 2048) {
         throw new Error('Unverified provider or invalid token limit');
       }
+      const paid = verifiedPricing.paidInference;
+      if (paid && (!reservation || reserved !== reservation || maxOutputTokens !== reservation.completionTokens
+        || JSON.stringify(messagesFor(context)) !== reservedMessages)) throw new Error('Missing matching reservation');
+      const requestReservation = reservation;
+      reservation = null;
+      if (paid) verified = false;
       let response;
       try {
         response = await fetchImpl(`${endpoint}/chat/completions`, {
@@ -120,7 +191,7 @@ export function createProvider({ apiKey, model = allowedModels[0],
             model, max_tokens: maxOutputTokens, stream: false, response_format: { type: 'json_object' },
             usage: { include: true },
             provider: routingPolicy,
-            messages: [{ role: 'system', content: instructions }, { role: 'user', content: JSON.stringify(context) }],
+            messages: messagesFor(context),
           }),
         });
       } catch {
@@ -144,17 +215,19 @@ export function createProvider({ apiKey, model = allowedModels[0],
       const reportedCostUsd = typeof data.usage?.cost === 'number' && Number.isFinite(data.usage.cost)
         && data.usage.cost >= 0 ? data.usage.cost : null;
       const result = { usage, reportedCostUsd, model: identity(data.model), provider: identity(data.provider) };
-      if (reportedCostUsd > 0) {
+      if (!paid && reportedCostUsd > 0) {
         verified = false;
         return { ...result, error: 'pricing_violation' };
       }
       if (!usage) return { ...result, error: 'usage_unavailable' };
+      if (paid && reportedCostUsd > requestReservation.costUsd) return { ...result, error: 'reservation_violation' };
+      if (paid && usage.promptTokens > requestReservation.promptTokens) return { ...result, error: 'input_limit' };
       const modelMatches = model === freeRouter
         ? typeof data.model === 'string' && data.model !== freeRouter
           && /^[a-zA-Z0-9][a-zA-Z0-9._-]*\/[a-zA-Z0-9._:/-]+$/.test(data.model) && data.model.length <= 128
         : [model, model.replace(/:free$/, '')].includes(data.model);
       const providerMatches = provider === null
-        ? data.provider == null || (identity(data.provider) !== null && data.provider.length <= 128)
+        ? (!paid && data.provider == null) || (identity(data.provider) !== null && data.provider.length <= 128)
         : data.provider === provider;
       if (!modelMatches || !providerMatches) {
         return { ...result, error: 'provider_identity_mismatch' };
