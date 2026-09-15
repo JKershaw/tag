@@ -11,7 +11,7 @@ export function executionLimits(input = {}) {
   const limits = { ...defaultLimits, ...input };
   for (const [key, min, max] of [
     ['maxGenerations', 1, 15], ['concurrency', 1, 1], ['maxRetries', 0, 1],
-    ['minDelayMs', 3000, 60000], ['maxOutputTokens', 128, 2048], ['maxNodes', 1, 25],
+    ['minDelayMs', 3000, 60000], ['maxOutputTokens', 128, 4096], ['maxNodes', 1, 25],
   ]) {
     if (!Number.isSafeInteger(limits[key]) || limits[key] < min || limits[key] > max) {
       throw new Error(`Invalid ${key}: allowed range ${min}..${max}`);

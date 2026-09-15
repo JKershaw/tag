@@ -43,7 +43,7 @@ test('fresh planning uses the real adapter and store with mocked HTTP, then stop
     calls++;
     const request = JSON.parse(options.body);
     assert.match(request.messages[0].content, /research and decomposition ONLY/);
-    assert.equal(request.max_tokens, 2048);
+    assert.equal(request.max_tokens, 4096);
     suppliedContext = JSON.parse(request.messages[1].content);
     assert.equal(suppliedContext.mode, 'plan');
     assert.ok(suppliedContext.node.context.includes('core/graph.js:96-'));

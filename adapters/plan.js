@@ -38,7 +38,7 @@ export async function plan(objective, { directory, apiKey = process.env.OPENROUT
   const provider = createProvider({ apiKey, model });
   const store = await openStore(directory);
   try {
-    return await dispatchRun({ objective, context, limits: { maxOutputTokens: 2048 } },
+    return await dispatchRun({ objective, context, limits: { maxOutputTokens: 4096 } },
       { store, provider, planning: true });
   } finally {
     await store.close();
