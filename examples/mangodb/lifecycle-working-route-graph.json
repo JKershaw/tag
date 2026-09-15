@@ -1,0 +1,427 @@
+{
+  "protocolVersion": 1,
+  "revision": 3,
+  "generation": 1,
+  "nodes": [
+    {
+      "id": "root",
+      "objective": "Assess this real MangoDB document lifecycle check. State whether the supplied observations meet the expected insert/update/delete/reopen behavior, cite the host test, and limit the conclusion to this case. Do not claim you ran tools.",
+      "parentId": null,
+      "type": "task",
+      "context": "Trusted-host observation from test/mangodb-tasks.test.js, lifecycle case, using @jkershaw/mangodb and an isolated temporary directory: inserted a={count:2} and b={count:7}; updateOne on a with $inc count by 3 matched 1 and modified 1; deleteOne on b deleted 1. After closing and opening a new MangoClient, findOne(a).count was 5, findOne(b) was null, and countDocuments was 1. Expected: a.count=5, b absent, one remaining document. This is one observed local case, not a MongoDB compatibility certification.",
+      "status": "failed",
+      "blockedBy": [],
+      "references": [],
+      "evidence": [],
+      "decisions": [],
+      "actions": [],
+      "result": "Execution stopped: malformed_response. No complete root synthesis is available.",
+      "reason": "malformed_response",
+      "attempts": 1
+    }
+  ],
+  "history": [
+    {
+      "revision": 2,
+      "generation": 1,
+      "nodeId": "root",
+      "outcome": "rejected",
+      "error": "malformed_response"
+    },
+    {
+      "revision": 3,
+      "generation": 1,
+      "nodeId": "root",
+      "outcome": "stopped",
+      "stoppingReason": "malformed_response"
+    }
+  ],
+  "run": {
+    "limits": {
+      "maxGenerations": 2,
+      "maxCostUsd": 0.03,
+      "concurrency": 1,
+      "maxRetries": 0,
+      "minDelayMs": 3000,
+      "maxOutputTokens": 1536,
+      "maxNodes": 3
+    },
+    "model": "deepseek/deepseek-v4.1-flash",
+    "provider": null,
+    "maxGraphBytes": 1048576,
+    "routingPolicy": {
+      "allow_fallbacks": false,
+      "require_parameters": true,
+      "max_price": {
+        "prompt": 0.3,
+        "completion": 1.2
+      }
+    },
+    "usage": {
+      "generations": 1,
+      "promptTokens": 0,
+      "completionTokens": 0,
+      "totalTokens": 0,
+      "knownCostUsd": 0,
+      "costUsd": null,
+      "accountingComplete": false,
+      "reservedCostUsd": 0.0041424
+    },
+    "pricing": {
+      "status": "known_priced",
+      "reason": "nonzero_price",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "provider": null,
+      "source": "https://openrouter.ai/api/v1/models",
+      "checkedAt": "2026-09-15T06:54:25.356Z",
+      "modelPresent": true,
+      "promptPriceUsd": 3e-7,
+      "completionPriceUsd": 0.0000012,
+      "allAdvertisedPricesZero": false,
+      "paidInference": true,
+      "advertisedPricing": {
+        "prompt": "0.0000003",
+        "completion": "0.0000012",
+        "input_cache_read": "0.000000006",
+        "overrides": [
+          {
+            "utc_days": [
+              "saturday",
+              "sunday"
+            ],
+            "prompt": "0.00000015",
+            "completion": "0.0000006",
+            "input_cache_read": "0.000000003"
+          },
+          {
+            "utc_days": [
+              "monday",
+              "tuesday",
+              "wednesday",
+              "thursday",
+              "friday"
+            ],
+            "utc_start": 0,
+            "utc_end": 100,
+            "prompt": "0.00000015",
+            "completion": "0.0000006",
+            "input_cache_read": "0.000000003"
+          },
+          {
+            "utc_days": [
+              "monday",
+              "tuesday",
+              "wednesday",
+              "thursday",
+              "friday"
+            ],
+            "utc_start": 100,
+            "utc_end": 400,
+            "prompt": "0.0000003",
+            "completion": "0.0000012",
+            "input_cache_read": "0.000000006"
+          },
+          {
+            "utc_days": [
+              "monday",
+              "tuesday",
+              "wednesday",
+              "thursday",
+              "friday"
+            ],
+            "utc_start": 400,
+            "utc_end": 600,
+            "prompt": "0.00000015",
+            "completion": "0.0000006",
+            "input_cache_read": "0.000000003"
+          },
+          {
+            "utc_days": [
+              "monday",
+              "tuesday",
+              "wednesday",
+              "thursday",
+              "friday"
+            ],
+            "utc_start": 600,
+            "utc_end": 1000,
+            "prompt": "0.0000003",
+            "completion": "0.0000012",
+            "input_cache_read": "0.000000006"
+          },
+          {
+            "utc_days": [
+              "monday",
+              "tuesday",
+              "wednesday",
+              "thursday",
+              "friday"
+            ],
+            "utc_start": 1000,
+            "utc_end": 0,
+            "prompt": "0.00000015",
+            "completion": "0.0000006",
+            "input_cache_read": "0.000000003"
+          }
+        ]
+      },
+      "contextLength": 1048576,
+      "tokenizer": "DeepSeek"
+    },
+    "attempts": [
+      {
+        "generation": 1,
+        "nodeId": "root",
+        "model": "deepseek/deepseek-v4.1-flash",
+        "provider": null,
+        "status": "rejected",
+        "requestedModel": "deepseek/deepseek-v4.1-flash",
+        "actualModel": null,
+        "requestedProvider": null,
+        "actualProvider": null,
+        "routingPolicy": {
+          "allow_fallbacks": false,
+          "require_parameters": true,
+          "max_price": {
+            "prompt": 0.3,
+            "completion": 1.2
+          }
+        },
+        "pricing": {
+          "status": "known_priced",
+          "reason": "nonzero_price",
+          "model": "deepseek/deepseek-v4.1-flash",
+          "provider": null,
+          "source": "https://openrouter.ai/api/v1/models",
+          "checkedAt": "2026-09-15T06:54:25.356Z",
+          "modelPresent": true,
+          "promptPriceUsd": 3e-7,
+          "completionPriceUsd": 0.0000012,
+          "allAdvertisedPricesZero": false,
+          "paidInference": true,
+          "advertisedPricing": {
+            "prompt": "0.0000003",
+            "completion": "0.0000012",
+            "input_cache_read": "0.000000006",
+            "overrides": [
+              {
+                "utc_days": [
+                  "saturday",
+                  "sunday"
+                ],
+                "prompt": "0.00000015",
+                "completion": "0.0000006",
+                "input_cache_read": "0.000000003"
+              },
+              {
+                "utc_days": [
+                  "monday",
+                  "tuesday",
+                  "wednesday",
+                  "thursday",
+                  "friday"
+                ],
+                "utc_start": 0,
+                "utc_end": 100,
+                "prompt": "0.00000015",
+                "completion": "0.0000006",
+                "input_cache_read": "0.000000003"
+              },
+              {
+                "utc_days": [
+                  "monday",
+                  "tuesday",
+                  "wednesday",
+                  "thursday",
+                  "friday"
+                ],
+                "utc_start": 100,
+                "utc_end": 400,
+                "prompt": "0.0000003",
+                "completion": "0.0000012",
+                "input_cache_read": "0.000000006"
+              },
+              {
+                "utc_days": [
+                  "monday",
+                  "tuesday",
+                  "wednesday",
+                  "thursday",
+                  "friday"
+                ],
+                "utc_start": 400,
+                "utc_end": 600,
+                "prompt": "0.00000015",
+                "completion": "0.0000006",
+                "input_cache_read": "0.000000003"
+              },
+              {
+                "utc_days": [
+                  "monday",
+                  "tuesday",
+                  "wednesday",
+                  "thursday",
+                  "friday"
+                ],
+                "utc_start": 600,
+                "utc_end": 1000,
+                "prompt": "0.0000003",
+                "completion": "0.0000012",
+                "input_cache_read": "0.000000006"
+              },
+              {
+                "utc_days": [
+                  "monday",
+                  "tuesday",
+                  "wednesday",
+                  "thursday",
+                  "friday"
+                ],
+                "utc_start": 1000,
+                "utc_end": 0,
+                "prompt": "0.00000015",
+                "completion": "0.0000006",
+                "input_cache_read": "0.000000003"
+              }
+            ]
+          },
+          "contextLength": 1048576,
+          "tokenizer": "DeepSeek"
+        },
+        "reservedCostUsd": 0.0041424,
+        "reservation": {
+          "costUsd": 0.0041424,
+          "promptTokens": 7664,
+          "completionTokens": 1536,
+          "method": "utf8_bytes_plus_4096_framing_tokens",
+          "pricing": {
+            "status": "known_priced",
+            "reason": "nonzero_price",
+            "model": "deepseek/deepseek-v4.1-flash",
+            "provider": null,
+            "source": "https://openrouter.ai/api/v1/models",
+            "checkedAt": "2026-09-15T06:54:25.356Z",
+            "modelPresent": true,
+            "promptPriceUsd": 3e-7,
+            "completionPriceUsd": 0.0000012,
+            "allAdvertisedPricesZero": false,
+            "paidInference": true,
+            "advertisedPricing": {
+              "prompt": "0.0000003",
+              "completion": "0.0000012",
+              "input_cache_read": "0.000000006",
+              "overrides": [
+                {
+                  "utc_days": [
+                    "saturday",
+                    "sunday"
+                  ],
+                  "prompt": "0.00000015",
+                  "completion": "0.0000006",
+                  "input_cache_read": "0.000000003"
+                },
+                {
+                  "utc_days": [
+                    "monday",
+                    "tuesday",
+                    "wednesday",
+                    "thursday",
+                    "friday"
+                  ],
+                  "utc_start": 0,
+                  "utc_end": 100,
+                  "prompt": "0.00000015",
+                  "completion": "0.0000006",
+                  "input_cache_read": "0.000000003"
+                },
+                {
+                  "utc_days": [
+                    "monday",
+                    "tuesday",
+                    "wednesday",
+                    "thursday",
+                    "friday"
+                  ],
+                  "utc_start": 100,
+                  "utc_end": 400,
+                  "prompt": "0.0000003",
+                  "completion": "0.0000012",
+                  "input_cache_read": "0.000000006"
+                },
+                {
+                  "utc_days": [
+                    "monday",
+                    "tuesday",
+                    "wednesday",
+                    "thursday",
+                    "friday"
+                  ],
+                  "utc_start": 400,
+                  "utc_end": 600,
+                  "prompt": "0.00000015",
+                  "completion": "0.0000006",
+                  "input_cache_read": "0.000000003"
+                },
+                {
+                  "utc_days": [
+                    "monday",
+                    "tuesday",
+                    "wednesday",
+                    "thursday",
+                    "friday"
+                  ],
+                  "utc_start": 600,
+                  "utc_end": 1000,
+                  "prompt": "0.0000003",
+                  "completion": "0.0000012",
+                  "input_cache_read": "0.000000006"
+                },
+                {
+                  "utc_days": [
+                    "monday",
+                    "tuesday",
+                    "wednesday",
+                    "thursday",
+                    "friday"
+                  ],
+                  "utc_start": 1000,
+                  "utc_end": 0,
+                  "prompt": "0.00000015",
+                  "completion": "0.0000006",
+                  "input_cache_read": "0.000000003"
+                }
+              ]
+            },
+            "contextLength": 1048576,
+            "tokenizer": "DeepSeek"
+          }
+        },
+        "startedAt": "2026-09-15T06:54:25.440Z",
+        "retry": 0,
+        "finishedAt": "2026-09-15T06:54:55.456Z",
+        "reportedCostUsd": null,
+        "usage": null,
+        "error": "malformed_response",
+        "httpStatus": 200,
+        "diagnostics": {
+          "stage": "body_read",
+          "failureKind": "body_read_timeout",
+          "httpStatus": 200,
+          "elapsedMs": 30003.524315,
+          "timeoutMs": 30000,
+          "responseSizeLimitBytes": 2097152,
+          "responseBytes": 110,
+          "bodyComplete": false,
+          "responseSha256": null,
+          "topLevelJsonType": null,
+          "exceptionClass": "TimeoutError",
+          "exceptionCode": null
+        },
+        "validProposal": false,
+        "reconciledCostUsd": null,
+        "releasedCostUsd": 0
+      }
+    ],
+    "stoppingReason": "malformed_response"
+  }
+}
