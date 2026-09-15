@@ -1,0 +1,69 @@
+{
+  "protocolVersion": 1,
+  "revision": 0,
+  "nodeId": "root",
+  "summary": "Recorded host research of TAG baseline commit 94eef1c and one bounded decomposition of Improve TAG; replay fixture, not autonomous execution. All baseline file:line citations refer to that commit.",
+  "mutations": [
+    {
+      "op": "evidence",
+      "id": "root",
+      "text": "The baseline already provides persistent nodes, atomic graph mutations, prerequisite scheduling, bounded dispatch, and an external-agent context/apply workflow. Reuse these rather than replace the engine.",
+      "source": "Baseline repository inspection: core/graph.js:19-118,191-218; core/dispatch.js:30-49; cli.js:33-36,71-76"
+    },
+    {
+      "op": "decision",
+      "id": "root",
+      "text": "Make one researched decomposition visible before attempting autonomous implementation. A plan is not evidence that its work has been completed.",
+      "source": "bootstrap.md:16-23 and the Improve TAG demonstration objective"
+    },
+    {
+      "op": "add",
+      "id": "planning",
+      "parentId": "root",
+      "objective": "Turn an objective into one source-grounded decomposition",
+      "context": "Reuse bounded dispatch and proposal validation. Read bounded TAG source excerpts with provenance, request one research-backed task graph, and stop before executing children. Acceptance: one inference attempt maximum; tasks remain pending; accounting and failure reasons are inspectable."
+    },
+    {
+      "op": "evidence",
+      "id": "planning",
+      "text": "Dispatch already handles isolation, limits, and reservations, but exhausting a one-generation dispatch terminalizes the root. Planning needs a distinct successful stop that leaves proposed work open.",
+      "source": "Baseline core/dispatch.js:38-73,97-136"
+    },
+    {
+      "op": "add",
+      "id": "inspection",
+      "parentId": "root",
+      "objective": "Make the persistent graph readable without decoding JSON",
+      "context": "Render the existing graph, not a separate UI state model. Acceptance: see hierarchy, prerequisites, runnable work, questions, rationale, evidence sources, and results in a terminal and a self-contained browser view."
+    },
+    {
+      "op": "evidence",
+      "id": "inspection",
+      "text": "The baseline CLI prints graph/status/inspect as JSON. The existing explain function already distinguishes runnable work, waiting children, and prerequisites.",
+      "source": "Baseline cli.js:54-70; core/graph.js:106-118"
+    },
+    {
+      "op": "add",
+      "id": "demonstration",
+      "parentId": "root",
+      "objective": "Make Improve TAG reproducible and honest about what ran",
+      "context": "Acceptance: document fresh planning with credentials and an explicitly labelled offline recorded replay; test both with deterministic provider mocks; never present replay as fresh inference or a plan as implemented changes."
+    },
+    { "op": "depend", "id": "demonstration", "on": "planning" },
+    { "op": "depend", "id": "demonstration", "on": "inspection" },
+    {
+      "op": "add",
+      "id": "execution-policy",
+      "parentId": "root",
+      "type": "question",
+      "objective": "What approval policy should govern future code execution?",
+      "context": "A future iteration could apply proposed improvements, but tool permissions and human review policy have not been agreed. This question does not block the planning/viewing demonstration."
+    },
+    {
+      "op": "block",
+      "id": "execution-policy",
+      "human": true,
+      "reason": "Human decision needed before any future autonomous code-changing iteration; out of scope for this demonstration."
+    }
+  ]
+}

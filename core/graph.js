@@ -117,9 +117,11 @@ export function explain(graph, nodeId) {
   };
 }
 
-export function buildContext(graph, nodeId = nextNode(graph)?.id, { maxCharacters = 32000 } = {}) {
+export function buildContext(graph, nodeId = nextNode(graph)?.id, { maxCharacters = 32000, maxTextCharacters = 2000 } = {}) {
   validateGraph(graph);
   assert(Number.isSafeInteger(maxCharacters) && maxCharacters >= 8000, 'Context budget must be at least 8000 characters');
+  assert(Number.isSafeInteger(maxTextCharacters) && maxTextCharacters >= 128
+    && maxTextCharacters <= 16000, 'Text budget must be between 128 and 16000 characters');
   const current = graph.nodes.find(node => node.id === nodeId);
   assert(current, 'No current node');
   const included = new Set([current.id]);
@@ -136,7 +138,7 @@ export function buildContext(graph, nodeId = nextNode(graph)?.id, { maxCharacter
   }
   const related = [...included].filter(target => target !== current.id)
     .map(target => graph.nodes.find(node => node.id === target));
-  let textLimit = 2000;
+  let textLimit = maxTextCharacters;
   let itemLimit = 8;
   let nodeLimit = 32;
   function project(node) {
