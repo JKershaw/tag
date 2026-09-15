@@ -35,10 +35,13 @@ Tool requests require human approval; shell commands and file writes are never e
 const planningInstructions = `
 This request is research and decomposition ONLY, not execution or a final answer.
 Read the supplied repository excerpts, identify existing capabilities and concrete gaps relevant to the objective.
-Return one compact proposal: add 3–6 actionable task/question nodes, dependencies where needed, and evidence citing supplied file:line ranges.
-Each task context should state its rationale and acceptance criteria. Record uncertainty as a blocked question, not a fact.
+Return one compact proposal: add exactly 3–6 actionable task/question nodes, dependencies where needed, and evidence citing supplied file:line ranges.
+Each task context must state its rationale and acceptance criteria in one or two short sentences each; do not quote or restate the supplied
+repository excerpts, cite only their file:line locations. Record uncertainty as a blocked question, not a fact.
 Only add, depend, reference, evidence, decision, and block mutations are permitted. Include at least one task and evidence record.
-Do not resolve any node, request tools, implement changes, or claim tests ran. Keep within the output token limit; stop after decomposition.`;
+Do not resolve any node, request tools, implement changes, or claim tests ran.
+Output strictly the JSON proposal object matching the supplied protocol and nothing else: no preamble, prose, or explanation outside that JSON.
+Stay well within the output token limit; stop as soon as the compact decomposition is complete.`;
 
 async function json(response, diagnostics = {}) {
   diagnostics.stage = 'body_read';
@@ -252,6 +255,9 @@ export function createProvider({ apiKey, model = allowedModels[0],
             model, max_tokens: maxOutputTokens, stream: false, response_format: { type: 'json_object' },
             usage: { include: true },
             provider: routingPolicy,
+            // Planning is bounded research/decomposition, not deep reasoning; keep the fixed
+            // output budget for the compact JSON proposal itself, not hidden reasoning tokens.
+            ...(context.mode === 'plan' ? { reasoning: { enabled: false } } : {}),
             messages: messagesFor(context),
           }),
         });
